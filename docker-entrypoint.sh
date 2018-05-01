@@ -47,10 +47,14 @@ _generate_run_uwsgi_sh() {
 #!/usr/bin/env bash
 
 source venv/bin/activate
-venv/bin/python manage.py makemigrations
-venv/bin/python manage.py migrate
-venv/bin/python manage.py collectstatic --noinput
-venv/bin/uwsgi --http-auto-chunked --http-keepalive uwsgi.ini
+python manage.py makemigrations
+python manage.py migrate
+python manage.py collectstatic --noinput
+uwsgi --static-map /static/=static/ \\
+    --static-map /images/=images/ \\
+    --http-auto-chunked \\
+    --http-keepalive \\
+    uwsgi.ini
 EOF
     chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
 }
