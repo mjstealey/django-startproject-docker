@@ -83,10 +83,11 @@ database   docker-entrypoint.sh postgres   Up      0.0.0.0:5432->5432/tcp
 Run locally using venv.
 
 ```
-python3 -m venv venv
-venv/bin/pip install --upgrade pip
-venv/bin/pip install -r requirements.txt
-./run_uwsgi.sh
+$ python3 -m venv venv
+$ source venv/bin/activate
+(venv)$ pip install --upgrade pip
+(venv)$ pip install -r requirements.txt
+(venv)$ ./run_uwsgi.sh
 ```
 
 Validate that Django is running site at [http://localhost:8000/](http://localhost:8000/)

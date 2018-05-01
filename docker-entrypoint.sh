@@ -46,6 +46,7 @@ _generate_run_uwsgi_sh() {
     cat > /code/$PROJECT_NAME/run_uwsgi.sh << EOF
 #!/usr/bin/env bash
 
+source venv/bin/activate
 venv/bin/python manage.py makemigrations
 venv/bin/python manage.py migrate
 venv/bin/python manage.py collectstatic --noinput
@@ -76,6 +77,7 @@ EOF
 
 ### update settings.py file ###
 _update_settings_py() {
+sed -i '/import os/a from dotenv import load_dotenv\nload_dotenv(\x27'${PROJECT_NAME}'\x2F.env\x27)' /code/$PROJECT_NAME/$PROJECT_NAME/settings.py
 sed -i 's/ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = ["*"]/' /code/$PROJECT_NAME/$PROJECT_NAME/settings.py
     cat >> /code/$PROJECT_NAME/$PROJECT_NAME/settings.py << EOF
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
@@ -95,18 +97,19 @@ _generate_dockerfile() {
 FROM python:3.6
 MAINTAINER Michael J. Stealey <mjstealey@gmail.com>
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y \\
     postgresql-client
 
 RUN mkdir /code/
 COPY . /code/
 
 WORKDIR /code
-RUN if [ -d /code/venv ]; then rm -rf /code/venv; fi \
-    && if [ -d /code/static ]; then rm -rf /code/static; fi \
-    && if [ -d /code/media ]; then rm -rf /code/media; fi \
-    && python -m venv venv \
-    && venv/bin/pip install --upgrade pip \
+RUN if [ -d /code/venv ]; then rm -rf /code/venv; fi \\
+    && if [ -d /code/static ]; then rm -rf /code/static; fi \\
+    && if [ -d /code/media ]; then rm -rf /code/media; fi \\
+    && python -m venv venv \\
+    && . venv/bin/activate \\
+    && venv/bin/pip install --upgrade pip \\
     && venv/bin/pip install -r requirements.txt
 
 VOLUME ["/code"]
@@ -173,6 +176,7 @@ EOF
 cp /requirements.txt /code/requirements.txt
 
 python -m venv /venv
+source /venv/bin/activate
 /venv/bin/pip install --upgrade pip
 /venv/bin/pip install -r requirements.txt
 
