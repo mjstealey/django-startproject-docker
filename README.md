@@ -30,7 +30,7 @@ docker run --rm \
   django-startproject
 ```
 
-The output is a new Django project named `exaample`.
+The output is a new Django project named `example`.
 
 ```console
 $ tree -a example
@@ -123,7 +123,7 @@ django     /code/docker-entrypoint.sh      Up      0.0.0.0:8443->443/tcp, 0.0.0.
 
 Validate that Django is running site at [http://localhost:8000/](http://localhost:8000/)
 
-## References
+## Additional References
 
 - Django docs: [https://docs.djangoproject.com/en/2.0/](https://docs.djangoproject.com/en/2.0/)
 - Docker docs: [https://docs.docker.com](https://docs.docker.com)
