@@ -6,7 +6,7 @@ Generates the necessary files to start a new Django project using Docker based s
 - Virtual environment managed by venv ([module venv](https://docs.python.org/3/library/venv.html#module-venv))
 - PostgreSQL database adapter ([psycopg2-binary](https://pypi.org/project/psycopg2-binary/))
 - uWSGI based run script ([uWGSI](https://pypi.org/project/uWSGI/))
-- python-dotenv app settings management using ([python-dotenv](https://pypi.org/project/python-dotenv/))
+- python-dotenv app settings management ([python-dotenv](https://pypi.org/project/python-dotenv/))
 
 Project files are designed to be run either locally using venv, or in Docker using the generated `docker-compose.yml` file.
 
