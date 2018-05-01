@@ -1,6 +1,6 @@
-# Django startproject with Docker python:3.6
+# Django startproject in Docker
 
-Starts a new Django project using Docker based scripts.
+Generates the necessary files to start a new Django project using Docker based scripts.
 
 - Python 3.6 base Docker definition ([python:3.6](https://hub.docker.com/_/python/))
 - Virtual environment managed by venv ([module venv](https://docs.python.org/3/library/venv.html#module-venv))
@@ -20,8 +20,8 @@ docker build -t django-startproject .
 
 Run the `django-startproject` image:
 
-- Set the name of your project using `PROJECT_NAME` (default `PROJECT_NAME=example`)
-- Mount a local directory to the containers `/code` to output the new project definition files
+- Set the project name using `PROJECT_NAME` (default `PROJECT_NAME=example`)
+- Save the output to a local directory by mounting it as `/code`
 
 ```
 docker run --rm \
@@ -30,10 +30,10 @@ docker run --rm \
   django-startproject
 ```
 
-The output is a new Django project.
+The output is a new Django project named `exaample`.
 
 ```console
-$ tree example
+$ tree -a example
 example
 ├── Dockerfile
 ├── docker-compose.yml
@@ -54,9 +54,9 @@ example
 
 ## Running your new project
 
-The generated files include the necessary settings to start running your Django project locally, or in Docker.
+The generated output includes all of the necessary files to start running your Django project locally, or in Docker.
 
-**NOTE** - The default output assumes a PostgreSQL database connection which is defined in the `docker-compose.yml` file.
+**NOTE** - The default output assumes a PostgreSQL database connection which is defined in the `docker-compose.yml` file. The user can change this by modifying the contents of `secrets.py` to the database of their choosing.
 
 ### Local
 
