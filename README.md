@@ -40,6 +40,7 @@ example
 ├── docker-compose.yml
 ├── docker-entrypoint.sh
 ├── example
+│   ├── .env
 │   ├── __init__.py
 │   ├── secrets.py
 │   ├── settings.py
@@ -48,9 +49,27 @@ example
 ├── manage.py
 ├── requirements.txt
 ├── run_uwsgi.sh
+├── users
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── forms.py
+│   ├── migrations
+│   │   ├── 0001_initial.py
+│   │   └── __init__.py
+│   ├── models.py
+│   ├── templates
+│   │   ├── base.html
+│   │   ├── home.html
+│   │   ├── registration
+│   │   │   └── login.html
+│   │   └── signup.html
+│   ├── tests.py
+│   ├── urls.py
+│   └── views.py
 └── uwsgi.ini
 
-1 directory, 12 files
+5 directories, 27 files
 ```
 
 ## Running your new project
@@ -91,9 +110,18 @@ $ source venv/bin/activate
 (venv)$ ./run_uwsgi.sh
 ```
 
-Validate that Django is running site at [http://localhost:8000/](http://localhost:8000/)
+Validate that Django is running site at [http://localhost:8000/](http://localhost:8000/) where you should see the `home.html` page. (A simple, but functional home page at the sites root)
 
-![Django startproject init](https://user-images.githubusercontent.com/5332509/39456943-158aefc2-4cb8-11e8-9c46-b92660665209.png)
+Included template pages:
+
+- `home.html` at [http://localhost:8000/](http://localhost:8000/)
+  <img width="80%" alt="home.html" src="https://user-images.githubusercontent.com/5332509/39598329-2b1b5298-4ee6-11e8-9f36-afe2832cfd31.png">
+
+- `login.html` at [http://localhost:8000/users/login/](http://localhost:8000/users/login/)
+  <img width="80%" alt="login.html" src="https://user-images.githubusercontent.com/5332509/39598562-f0fe5fbe-4ee6-11e8-9c16-cd6757b097cf.png">
+
+- `signup.html`at [http://localhost:8000/users/signup/](http://localhost:8000/users/signup/)
+  <img width="80%" alt="signup.html" src="https://user-images.githubusercontent.com/5332509/39598561-f0d3cad8-4ee6-11e8-9afd-cfe7105b0d05.png">
 
 You should also notice that two new directories have been created, `static` and `venv`.
 
