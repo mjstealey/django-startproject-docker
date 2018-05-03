@@ -7,6 +7,7 @@ Generates the necessary files to start a new Django project using Docker based s
 - PostgreSQL database adapter ([psycopg2-binary](https://pypi.org/project/psycopg2-binary/))
 - uWSGI based run script ([uWGSI](https://pypi.org/project/uWSGI/))
 - python-dotenv app settings management ([python-dotenv](https://pypi.org/project/python-dotenv/))
+- Extended User Model with **base**, **home**, **login**, and **signup** templates (inspired by [Django: How to Extend The User Model (aka Custom User Model)](https://wsvincent.com/django-custom-user-model-tutorial/))
 
 Project files are designed to be run either locally using venv, or in Docker using the generated `docker-compose.yml` file.
 
