@@ -272,7 +272,12 @@ EOF
 }
 
 ### main ###
-cp /requirements.txt /code/requirements.txt
+if [ ! -f /code/requirements.txt ]; then
+    cp /requirements.txt /code/requirements.txt
+    RM_REQTS_FILE=true
+else
+    RM_REQTS_FILE=false
+fi
 
 pip install virtualenv
 virtualenv -p /usr/local/bin/python /venv
@@ -294,5 +299,10 @@ _generate_run_uwsgi_sh
 _generate_dockerfile
 _generate_docker_entrypoint_sh
 _generate_docker_compose_yml
+
+# clean up 
+if $RM_REQTS_FILE; then
+    rm -f /code/requirements.txt
+fi
 
 exit 0;
