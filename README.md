@@ -28,13 +28,19 @@ These are left to the user to implement using the methods that best fit their sc
 
 ## Starting a new project
 
-Build the `django-startproject` image from the included Dockerfile
+Pull image from [dockerhub](https://hub.docker.com/r/mjstealey/django-startproject-docker/)
 
 ```
-docker build -t django-startproject .
+docker pull mjstealey/django-startproject-docker
 ```
 
-Run the `django-startproject` image:
+Or build the `mjstealey/django-startproject-docker` image from the included Dockerfile
+
+```
+docker build -t mjstealey/django-startproject-docker .
+```
+
+Run the `mjstealey/django-startproject-docker` image:
 
 - Set your Django project name using the `PROJECT_NAME` variable (default `PROJECT_NAME=example`)
 - Volume mount a local directory as `/code` to save the Django project files to
@@ -43,7 +49,7 @@ Run the `django-startproject` image:
 docker run --rm \
   -e PROJECT_NAME=example \
   -v $(pwd):/code \
-  django-startproject
+  mjstealey/django-startproject-docker
 ```
 
 The above generates output files as a new Django project named `example`.
