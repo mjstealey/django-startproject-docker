@@ -25,19 +25,55 @@ EOF
 
 ### generate uwsgi.ini file ###
 _generate_uwsgi_ini() {
-    cat > /code/$PROJECT_NAME/uwsgi.ini << EOF
+    cat > /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
 [uwsgi]
-virtualenv = venv
-wsgi-file = ${PROJECT_NAME}/wsgi.py
-http = :8000
-master = 1
-workers = 2
-threads = 8
-lazy-apps = 1
-wsgi-env-behavior = holy
-post-buffering = true
-log-date = true
-max-requests = 5000
+; http://uwsgi-docs.readthedocs.io/en/latest/Options.html
+; the base directory before apps loading (full path)
+chdir               = /code
+; load Django's WSGI file/module
+module              = ${PROJECT_NAME}.wsgi
+; set PYTHONHOME/virtualenv (full path)
+virtualenv          = /code/venv
+; enable master process
+master              = true
+; spawn the specified number of workers/processes
+workers             = 1
+; run each worker in prethreaded mode with the specified number of threads
+threads             = 1
+EOF
+    if $WITH_NGINX; then
+        cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
+; bind to the specified UNIX/TCP socket using uwsgi protocol (full path)
+uwsgi-socket        = /code/${PROJECT_NAME}.sock
+; ... with appropriate permissions - may be needed
+chmod-socket        = 664
+EOF
+    else
+        cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
+; add an http router/server on the specified address
+http                = :8000
+; map mountpoint to static directory (or file)
+static-map          = /static/=static/
+static-map          = /media/=media/
+EOF
+    fi
+    cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
+; clear environment on exit
+vacuum              = true
+; automatically transform output to chunked encoding during HTTP 1.1 keepalive
+http-auto-chunked   = true
+; HTTP 1.1 keepalive support (non-pipelined) requests
+http-keepalive      = true
+; load apps in each worker instead of the master
+lazy-apps           = true
+; strategy for allocating/deallocating the WSGI env
+wsgi-env-behavior   = holy
+; enable post buffering
+post-buffering      = true
+; prefix logs with date or a strftime string
+log-date            = true
+; reload workers after the specified amount of managed requests
+max-requests        = 5000
 EOF
 }
 
@@ -51,11 +87,7 @@ python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
 python manage.py collectstatic --noinput
-uwsgi --static-map /static/=static/ \\
-    --static-map /media/=media/ \\
-    --http-auto-chunked \\
-    --http-keepalive \\
-    uwsgi.ini
+uwsgi --ini ${PROJECT_NAME}_uwsgi.ini
 EOF
     chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
 }
@@ -131,16 +163,142 @@ services:
       POSTGRES_HOST: database
     ports:
       - 8000:8000
-      - 8443:443
-      - 8080:80
     volumes:
       - .:/code
       - ./static:/code/static
       - ./media:/code/media
 EOF
+    if $WITH_NGINX; then
+        cat >> /code/$PROJECT_NAME/docker-compose.yml << EOF
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - 8080:80
+      - 8443:443
+    volumes:
+      - .:/code
+      - ./static:/code/static
+      - ./media:/code/media
+      - ./nginx/${PROJECT_NAME}_nginx.conf:/etc/nginx/conf.d/default.conf
+EOF
+    fi
 }
 
-# populate settings directory
+### populate nginx directory with conf files
+_generate_nginx_conf() {
+    if [[ ! -d /code/$PROJECT_NAME/nginx ]]; then
+        mkdir -p /code/$PROJECT_NAME/nginx
+    fi
+    cat > /code/$PROJECT_NAME/nginx/${PROJECT_NAME}_nginx.conf << EOF
+# ${PROJECT_NAME}_nginx.conf
+
+# the upstream component nginx needs to connect to
+upstream django {
+    server unix:///code/${PROJECT_NAME}.sock; # for a file socket
+}
+
+# configuration of the server
+server {
+    # the port your site will be served on
+    listen      80;
+    # the domain name it will serve for
+    server_name 127.0.0.1:8080; # substitute your machine's IP address or FQDN
+    charset     utf-8;
+
+    # max upload size
+    client_max_body_size 75M;   # adjust to taste
+
+    # Django media
+    location /media  {
+        alias /code/media;  # your Django project's media files - amend as required
+    }
+
+    location /static {
+        alias /code/static; # your Django project's static files - amend as required
+    }
+
+    # Finally, send all non-media requests to the Django server.
+    location / {
+        uwsgi_pass  django;
+        include     /code/uwsgi_params; # the uwsgi_params file you installed
+    }
+}
+EOF
+    cat > /code/$PROJECT_NAME/nginx/${PROJECT_NAME}_nginx_ssl.conf << EOF
+# ${PROJECT_NAME}_nginx_ssl.conf
+
+# the upstream component nginx needs to connect to
+upstream django {
+    server unix:///code/${PROJECT_NAME}.sock;
+}
+
+server {
+    listen 80;
+    server_name 127.0.0.1:8080; # substitute your machine's IP address or FQDN
+    return 301 https://127.0.0.1:8443\$request_uri; # substitute your machine's IP address or FQDN
+}
+
+# configuration of the server
+server {
+    # the port your site will be served on
+    listen      443;
+
+    ssl on;
+    ssl_certificate /etc/ssl/SSL.crt;
+    ssl_certificate_key /etc/ssl/SSL.key;
+
+    # the domain name it will serve for
+    server_name 127.0.0.1:8443; # substitute your machine's IP address or FQDN
+    charset     utf-8;
+
+    # max upload size
+    client_max_body_size 75M;   # adjust to taste
+
+    # Django media
+    location /media  {
+        alias /code/media;  # your Django project's media files - amend as required
+    }
+
+    location /static {
+        alias /code/static; # your Django project's static files - amend as required
+    }
+
+    # Finally, send all non-media requests to the Django server.
+    location / {
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;  # <-
+        proxy_set_header Host \$http_host;
+        proxy_redirect off;
+
+        uwsgi_pass  django;
+        include     /code/uwsgi_params; # the uwsgi_params file you installed
+    }
+}
+EOF
+    cat > /code/$PROJECT_NAME/uwsgi_params << EOF
+
+uwsgi_param  QUERY_STRING       \$query_string;
+uwsgi_param  REQUEST_METHOD     \$request_method;
+uwsgi_param  CONTENT_TYPE       \$content_type;
+uwsgi_param  CONTENT_LENGTH     \$content_length;
+
+uwsgi_param  REQUEST_URI        \$request_uri;
+uwsgi_param  PATH_INFO          \$document_uri;
+uwsgi_param  DOCUMENT_ROOT      \$document_root;
+uwsgi_param  SERVER_PROTOCOL    \$server_protocol;
+uwsgi_param  REQUEST_SCHEME     \$scheme;
+uwsgi_param  HTTPS              \$https if_not_empty;
+
+uwsgi_param  REMOTE_ADDR        \$remote_addr;
+uwsgi_param  REMOTE_PORT        \$remote_port;
+uwsgi_param  SERVER_PORT        \$server_port;
+uwsgi_param  SERVER_NAME        \$server_name;
+EOF
+}
+
+### populate settings directory
 _generate_settings() {
     local SETTINGS_DIR=/code/$PROJECT_NAME/$PROJECT_NAME/settings
     local SETTINGS_PY=/code/$PROJECT_NAME/$PROJECT_NAME/settings.py
@@ -272,6 +430,41 @@ EOF
 }
 
 ### main ###
+OPTIONS=n
+LONGOPTIONS=nginx
+WITH_NGINX=false
+
+# -temporarily store output to be able to check for errors
+# -e.g. use “--options” parameter by name to activate quoting/enhanced mode
+# -pass arguments only via   -- "$@"   to separate them correctly
+PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTIONS --name "$0" -- "$@")
+if [[ $? -ne 0 ]]; then
+    # e.g. $? == 1
+    #  then getopt has complained about wrong arguments to stdout
+    exit 2
+fi
+# read getopt’s output this way to handle the quoting right:
+eval set -- "$PARSED"
+
+# now enjoy the options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -n|--nginx)
+            echo "### Generate with Nginx ###"
+            WITH_NGINX=true
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Programming error"
+            exit 3
+            ;;
+    esac
+done
+
 if [ ! -f /code/requirements.txt ]; then
     cp /requirements.txt /code/requirements.txt
     RM_REQTS_FILE=true
@@ -296,6 +489,9 @@ touch /code/$PROJECT_NAME/plugins/__init__.py
 _generate_settings
 _generate_uwsgi_ini
 _generate_run_uwsgi_sh
+if $WITH_NGINX; then
+    _generate_nginx_conf
+fi
 _generate_dockerfile
 _generate_docker_entrypoint_sh
 _generate_docker_compose_yml
