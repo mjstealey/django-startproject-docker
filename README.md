@@ -71,15 +71,15 @@ example                         # Project root
 │   ├── __init__.py             # Python init
 │   ├── settings                # Django settings directory
 │   │   ├── __init__.py         # Python init
-│   │   ├── api.py              # API Django settings file (intially blank)
+│   │   ├── api.py              # API Django settings file (initially blank)
 │   │   ├── applications.py     # Installed apps Django settings file
-│   │   ├── auth.py             # Authentication Django settings file (intially blank)
+│   │   ├── auth.py             # Authentication Django settings file (initially blank)
 │   │   ├── config.py           # Configuration Django settings file
 │   │   ├── dummy_secrets.py    # Django secrets file (example file)
 │   │   ├── logging.py          # Logging Django settings file
 │   │   ├── main.py             # Main Django settings file
 │   │   ├── secrets.py          # Django secrets file (with key)
-│   │   └── tasks.py            # Tasks Django settings file (intially blank)
+│   │   └── tasks.py            # Tasks Django settings file (initially blank)
 │   ├── urls.py                 # Django urls file
 │   └── wsgi.py                 # Django WSGI file
 ├── example_uwsgi.ini           # uWSGI configuration file
@@ -115,15 +115,15 @@ example                         # Project root
 │   ├── __init__.py             # Python init
 │   ├── settings                # Django settings directory
 │   │   ├── __init__.py         # Python init
-│   │   ├── api.py              # API Django settings file (intially blank)
+│   │   ├── api.py              # API Django settings file (initially blank)
 │   │   ├── applications.py     # Installed apps Django settings file
-│   │   ├── auth.py             # Authentication Django settings file (intially blank)
+│   │   ├── auth.py             # Authentication Django settings file (initially blank)
 │   │   ├── config.py           # Configuration Django settings file
 │   │   ├── dummy_secrets.py    # Django secrets file (example file)
 │   │   ├── logging.py          # Logging Django settings file
 │   │   ├── main.py             # Main Django settings file
 │   │   ├── secrets.py          # Django secrets file (with key)
-│   │   └── tasks.py            # Tasks Django settings file (intially blank)
+│   │   └── tasks.py            # Tasks Django settings file (initially blank)
 │   ├── urls.py                 # Django urls file
 │   └── wsgi.py                 # Django WSGI file
 ├── example_uwsgi.ini           # uWSGI configuration file
