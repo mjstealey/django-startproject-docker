@@ -46,7 +46,7 @@ EOF
 ; bind to the specified UNIX/TCP socket using uwsgi protocol (full path)
 uwsgi-socket        = /code/${PROJECT_NAME}.sock
 ; ... with appropriate permissions - may be needed
-chmod-socket        = 664
+chmod-socket        = 666
 EOF
     else
         cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
@@ -87,7 +87,7 @@ python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
 python manage.py collectstatic --noinput
-uwsgi --ini ${PROJECT_NAME}_uwsgi.ini
+uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --ini ${PROJECT_NAME}_uwsgi.ini
 EOF
     chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
 }
@@ -430,9 +430,13 @@ EOF
 }
 
 ### main ###
-OPTIONS=n
-LONGOPTIONS=nginx
+OPTIONS=no:z:u:g:h
+LONGOPTIONS=nginx,owner-uid:,owner-gid:,uwsgi-uid:,uwsgi-gid:,help
 WITH_NGINX=false
+OWNER_UID=1000
+OWNER_GID=1000
+UWSGI_UID=1000
+UWSGI_GID=1000
 
 # -temporarily store output to be able to check for errors
 # -e.g. use “--options” parameter by name to activate quoting/enhanced mode
@@ -453,6 +457,42 @@ while true; do
             echo "### Generate with Nginx ###"
             WITH_NGINX=true
             shift
+            ;;
+        -o|--owner-uid)
+            echo "### Set owner UID = ${2} ###"
+            OWNER_UID="$2"
+            shift 2
+            ;;
+        -z|--owner-gid)
+            echo "### Set owner UID = ${2} ###"
+            OWNER_GID="$2"
+            shift 2
+            ;;
+        -u|--uwsgi-uid)
+            echo "### Set uWSGI UID = ${2} ###"
+            UWSGI_UID="$2"
+            shift 2
+            ;;
+        -g|--uwsgi-gid)
+            echo "### Set uWSGI GID = ${2} ###"
+            UWSGI_GID="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "### Help ###"
+            cat >&1 << EOF
+
+Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
+         -n|--nginx     = Include Nginx service definition files with build output
+         -h|--help      = Help/Usage output
+         -o|--owner-uid = Host UID to attribute output file ownership to (default 1000)
+         -z|--owner-gid = Host GID to attribute output file ownership to (default 1000)
+         -u|--uwsgi-uid = Host UID to run the uwsgi service as (default 1000)
+         -g|--uwsgi-gid = Host GID to run the uwsgi service as (default 1000)
+
+EOF
+            shift
+            exit 0;
             ;;
         --)
             shift
@@ -495,6 +535,7 @@ fi
 _generate_dockerfile
 _generate_docker_entrypoint_sh
 _generate_docker_compose_yml
+chown -R $OWNER_UID:$OWNER_GID /code/$PROJECT_NAME
 
 # clean up 
 if $RM_REQTS_FILE; then
