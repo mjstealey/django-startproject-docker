@@ -501,10 +501,10 @@ while true; do
 Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
          -n|--nginx     = Include Nginx service definition files with build output
          -h|--help      = Help/Usage output
-         -o|--owner-uid = Host UID to attribute output file ownership to (default 1000)
-         -z|--owner-gid = Host GID to attribute output file ownership to (default 1000)
-         -u|--uwsgi-uid = Host UID to run the uwsgi service as (default 1000)
-         -g|--uwsgi-gid = Host GID to run the uwsgi service as (default 1000)
+         -o|--owner-uid = Host UID to attribute output file ownership to (default=1000)
+         -z|--owner-gid = Host GID to attribute output file ownership to (default=1000)
+         -u|--uwsgi-uid = Host UID to run the uwsgi service as (default=0)
+         -g|--uwsgi-gid = Host GID to run the uwsgi service as (default=0)
 
 EOF
             shift
