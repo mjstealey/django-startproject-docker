@@ -30,22 +30,36 @@ These are stubbed and left to the user to implement using the methods that best 
 
 ## Starting a new project
 
-Pull image from [dockerhub](https://hub.docker.com/r/mjstealey/django-startproject-docker/)
+### Pull image from [dockerhub](https://hub.docker.com/r/mjstealey/django-startproject-docker/)
 
 ```
 docker pull mjstealey/django-startproject-docker
 ```
 
-Or build the `mjstealey/django-startproject-docker` image from the included Dockerfile
+- Optionally the user can build the `mjstealey/django-startproject-docker` image locally from the included Dockerfile
 
-```
-docker build -t mjstealey/django-startproject-docker .
-```
+    ```
+    docker build -t mjstealey/django-startproject-docker .
+    ```
 
-Run the `mjstealey/django-startproject-docker` image:
+### Run `mjstealey/django-startproject-docker`
 
 - Set your Django project name using the `PROJECT_NAME` variable (default `PROJECT_NAME=example`)
 - Volume mount a local directory as `/code` to save the Django project files to
+- Additional parameters can be found using the `-h|--help` option
+
+    ```console
+    $ docker run --rm mjstealey/django-startproject-docker --help
+    ### Help ###
+    
+    Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
+             -n|--nginx     = Include Nginx service definition files with build output
+             -h|--help      = Help/Usage output
+             -o|--owner-uid = Host UID to attribute output file ownership to (default 1000)
+             -z|--owner-gid = Host GID to attribute output file ownership to (default 1000)
+             -u|--uwsgi-uid = Host UID to run the uwsgi service as (default 1000)
+             -g|--uwsgi-gid = Host GID to run the uwsgi service as (default 1000)
+    ```
 
 ### Option 1: uWSGI runs the HTTP server
 
@@ -55,7 +69,9 @@ Default configuration runs on port `8000`
 docker run --rm \
   -e PROJECT_NAME=example \
   -v $(pwd):/code \
-  mjstealey/django-startproject-docker
+  mjstealey/django-startproject-docker \
+  --owner-uid $(id -u) \
+  --owner-gid $(id -g)
 ```
 
 The above generates output files as a new Django project named `example`.
@@ -84,13 +100,17 @@ example                         # Project root
 │   └── wsgi.py                 # Django WSGI file
 ├── example_uwsgi.ini           # uWSGI configuration file
 ├── manage.py                   # Django manage.py file
+├── media                       # Django media files directory
 ├── plugins                     # Django plugins directory
 │   └── __init__.py             # Python init
 ├── requirements.txt            # Pip install requirements file
-└── run_uwsgi.sh                # uWSGI run script
+├── run_uwsgi.sh                # uWSGI run script
+└── static                      # Django static files directory
 
-4 directories, 21 files
+6 directories, 21 files
 ```
+
+Ownership of all files should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
 
 ### Option 2: Nginx runs the HTTP server
 
@@ -100,8 +120,14 @@ Default configuration runs on port `8080`
 docker run --rm \
   -e PROJECT_NAME=example \
   -v $(pwd):/code \
-  mjstealey/django-startproject-docker --nginx
+  mjstealey/django-startproject-docker \
+  --nginx \
+  --owner-uid $(id -u) \
+  --owner-gid $(id -g) \
+  --uwsgi-uid $(id -u) \
+  --uwsgi-gid $(id -g)
 ```
+
 The above generates output files as a new Django project named `example`.
 
 ```console
@@ -128,6 +154,7 @@ example                         # Project root
 │   └── wsgi.py                 # Django WSGI file
 ├── example_uwsgi.ini           # uWSGI configuration file
 ├── manage.py                   # Django manage.py file
+├── media                       # Django media files directory
 ├── nginx                       # Nginx configuration directory
 │   ├── example_nginx.conf      # HTTP example Nginx conf
 │   └── example_nginx_ssl.conf  # HTTPS example Nginx conf
@@ -135,25 +162,21 @@ example                         # Project root
 │   └── __init__.py             # Python init
 ├── requirements.txt            # Pip install requirements file
 ├── run_uwsgi.sh                # uWSGI run script
+├── static                      # Django static files directory
 └── uwsgi_params                # Nginx uwsgi_params file
 
-5 directories, 24 files
+7 directories, 24 files
 ```
+
+Ownership of all files should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
+
+Additionally the `uwsgi` service will be spawned using the user's UID and GID values which can be observed in the `run_uwsgi.sh` script (these would otherwise default to the root user).
 
 ## Running your project
 
 The generated output includes all of the necessary files to start running your Django project locally, or in Docker.
 
-On the first run a `static` directory will be created at the project root level and populated with the contents of the `admin` static files. The `media` directory would also be located at the project root level when it is used.
-
-```console
-example                         # Project root
-├── media                       # Django static files
-├── static                      # Django media files
-... 
-```
-
-**NOTE** - The default settings assume that a PostgreSQL database connection exists which is defined in the `docker-compose.yml` file. The user can change this by modifying the contents of `settings/config.py` to the database of their choosing.
+- **NOTE** - The default settings assume that a PostgreSQL database connection exists which is defined in the `docker-compose.yml` file. The user can change this by modifying the contents of `settings/config.py` to the database of their choosing.
 
 ## Run locally with Python 3
 
@@ -193,30 +216,9 @@ Validate that the Django is running site at [http://localhost:8000/](http://loca
 
 ![Django startproject init](https://user-images.githubusercontent.com/5332509/39456943-158aefc2-4cb8-11e8-9c46-b92660665209.png)
 
-You will notice that two new directories have been created, `static` and `venv`.
-
-- `static`: Collected static files from each of your applications (and any other places you specify) into a single location that can easily be served in production.
-- `venv`: Python binary (allowing creation of environments with various Python versions) and can have its own independent set of installed Python packages in its site directories.
+You will notice that a new directoriy has been created named `venv`. This directory contains the Python binary (allowing creation of environments with various Python versions) and can have its own independent set of installed Python packages in its site directories.
 
 ### Option 2: Nginx runs the HTTP server
-
-**update _uwsgi.ini**
-
-The default configuration is for a docker based deployment, so you'll need to update the `example_uwsgi.ini` file in a few places to run it locally.
-
-```ini
-[uwsgi]
-; http://uwsgi-docs.readthedocs.io/en/latest/Options.html
-; the base directory before apps loading (full path)
-chdir               = /FULL_PATH_TO/example
-...
-; set PYTHONHOME/virtualenv (full path)
-virtualenv          = /FULL_PATH_TO/venv
-...
-; bind to the specified UNIX/TCP socket using uwsgi protocol (full path)
-uwsgi-socket        = /FULL_PATH_TO/example.sock
-...
-```
 
 **Database** and **Nginx**
 
@@ -251,7 +253,7 @@ $ source venv/bin/activate
 !!! no internal routing support, rebuild with pcre support !!!
 ```
 
-In this case Nginx would respond with **502 Bad Gateway** and have logs similar to:
+In this case Nginx might respond with **502 Bad Gateway** and have logs similar to:
 
 ```console
 $ docker-compose logs nginx
@@ -292,7 +294,7 @@ Check the status of the containers:
     database   docker-entrypoint.sh postgres   Up      0.0.0.0:5432->5432/tcp
     django     /code/docker-entrypoint.sh      Up      0.0.0.0:8443->443/tcp, 0.0.0.0:8080->80/tcp, 0.0.0.0:8000->8000/tcp
     ```
-    Validate that your Django server is running at [http://localhost:8000/](http://localhost:8000/)
+    After a few moments validate that your Django server is running at [http://localhost:8000/](http://localhost:8000/)
 
 - Nginx option
 
@@ -305,7 +307,7 @@ Check the status of the containers:
     nginx      nginx -g daemon off;            Up      0.0.0.0:8443->443/tcp, 0.0.0.0:8080->80/tcp
     ```
 
-    Validate that your Django server is running at [http://localhost:8080/](http://localhost:8080/)
+    After a few moments validate that your Django server is running at [http://localhost:8080/](http://localhost:8080/)
 
 ## Additional References
 

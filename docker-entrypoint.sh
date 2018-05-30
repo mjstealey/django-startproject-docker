@@ -29,11 +29,11 @@ _generate_uwsgi_ini() {
 [uwsgi]
 ; http://uwsgi-docs.readthedocs.io/en/latest/Options.html
 ; the base directory before apps loading (full path)
-chdir               = /code
+chdir               = ./
 ; load Django's WSGI file/module
 module              = ${PROJECT_NAME}.wsgi
 ; set PYTHONHOME/virtualenv (full path)
-virtualenv          = /code/venv
+virtualenv          = ./venv
 ; enable master process
 master              = true
 ; spawn the specified number of workers/processes
@@ -44,7 +44,7 @@ EOF
     if $WITH_NGINX; then
         cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
 ; bind to the specified UNIX/TCP socket using uwsgi protocol (full path)
-uwsgi-socket        = /code/${PROJECT_NAME}.sock
+uwsgi-socket        = ./${PROJECT_NAME}.sock
 ; ... with appropriate permissions - may be needed
 chmod-socket        = 666
 EOF
@@ -87,8 +87,24 @@ python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
 python manage.py collectstatic --noinput
+EOF
+    if [[ "${UWSGI_UID}" != 0 ]] && [[ "${UWSGI_GID}" != 0 ]]; then
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
 uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --ini ${PROJECT_NAME}_uwsgi.ini
 EOF
+    elif [[ "${UWSGI_UID}" != 0 ]]; then
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+uwsgi --uid ${UWSGI_UID} --ini ${PROJECT_NAME}_uwsgi.ini
+EOF
+    elif [[ "${UWSGI_GID}" != 0 ]]; then
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+uwsgi --gid ${UWSGI_GID} --ini ${PROJECT_NAME}_uwsgi.ini
+EOF
+    else
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+uwsgi --ini ${PROJECT_NAME}_uwsgi.ini
+EOF
+    fi
     chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
 }
 
@@ -435,8 +451,8 @@ LONGOPTIONS=nginx,owner-uid:,owner-gid:,uwsgi-uid:,uwsgi-gid:,help
 WITH_NGINX=false
 OWNER_UID=1000
 OWNER_GID=1000
-UWSGI_UID=1000
-UWSGI_GID=1000
+UWSGI_UID=0
+UWSGI_GID=0
 
 # -temporarily store output to be able to check for errors
 # -e.g. use “--options” parameter by name to activate quoting/enhanced mode
@@ -524,7 +540,10 @@ source /venv/bin/activate
 _generate_env
 source /code/$PROJECT_NAME/$PROJECT_NAME/.env
 
-mkdir -p /code/$PROJECT_NAME/apps /code/$PROJECT_NAME/plugins
+mkdir -p /code/$PROJECT_NAME/static \
+    /code/$PROJECT_NAME/media \
+    /code/$PROJECT_NAME/apps \
+    /code/$PROJECT_NAME/plugins
 touch /code/$PROJECT_NAME/plugins/__init__.py
 _generate_settings
 _generate_uwsgi_ini
