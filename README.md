@@ -44,22 +44,24 @@ docker pull mjstealey/django-startproject-docker
 
 ### Run `mjstealey/django-startproject-docker`
 
-- Set your Django project name using the `PROJECT_NAME` variable (default `PROJECT_NAME=example`)
-- Volume mount a local directory as `/code` to save the Django project files to
-- Additional parameters can be found using the `-h|--help` option
+Configure the docker run call to specify your project's settings
 
-    ```console
-    $ docker run --rm mjstealey/django-startproject-docker --help
-    ### Help ###
-    
-    Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
-             -n|--nginx     = Include Nginx service definition files with build output
-             -h|--help      = Help/Usage output
-             -o|--owner-uid = Host UID to attribute output file ownership to (default 1000)
-             -z|--owner-gid = Host GID to attribute output file ownership to (default 1000)
-             -u|--uwsgi-uid = Host UID to run the uwsgi service as (default 1000)
-             -g|--uwsgi-gid = Host GID to run the uwsgi service as (default 1000)
-    ```
+- Django project name set using the `PROJECT_NAME` variable (default `PROJECT_NAME=example`)
+- Volume mount a local directory to `:/code` to save the Django project files to
+- Additional options can be found using `-h|--help`
+
+  ```console
+  $ docker run --rm mjstealey/django-startproject-docker --help
+  ### Help ###
+  
+  Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
+           -n|--nginx     = Include Nginx service definition files with build output
+           -h|--help      = Help/Usage output
+           -o|--owner-uid = Host UID to attribute output file ownership to (default=1000)
+           -z|--owner-gid = Host GID to attribute output file ownership to (default=1000)
+           -u|--uwsgi-uid = Host UID to run the uwsgi service as (default=0)
+           -g|--uwsgi-gid = Host GID to run the uwsgi service as (default=0)
+  ```
 
 ### Option 1: uWSGI runs the HTTP server
 
@@ -110,7 +112,7 @@ example                         # Project root
 6 directories, 21 files
 ```
 
-Ownership of all files should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
+File ownership should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
 
 ### Option 2: Nginx runs the HTTP server
 
@@ -168,7 +170,7 @@ example                         # Project root
 7 directories, 24 files
 ```
 
-Ownership of all files should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
+File ownership should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
 
 Additionally the `uwsgi` service will be spawned using the user's UID and GID values which can be observed in the `run_uwsgi.sh` script (these would otherwise default to the root user).
 
