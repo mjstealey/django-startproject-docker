@@ -29,11 +29,11 @@ _generate_uwsgi_ini() {
 [uwsgi]
 ; http://uwsgi-docs.readthedocs.io/en/latest/Options.html
 ; the base directory before apps loading (full path)
-chdir               = /code
+chdir               = ./
 ; load Django's WSGI file/module
 module              = ${PROJECT_NAME}.wsgi
 ; set PYTHONHOME/virtualenv (full path)
-virtualenv          = /code/venv
+virtualenv          = ./venv
 ; enable master process
 master              = true
 ; spawn the specified number of workers/processes
@@ -44,9 +44,9 @@ EOF
     if $WITH_NGINX; then
         cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
 ; bind to the specified UNIX/TCP socket using uwsgi protocol (full path)
-uwsgi-socket        = /code/${PROJECT_NAME}.sock
+uwsgi-socket        = ./${PROJECT_NAME}.sock
 ; ... with appropriate permissions - may be needed
-chmod-socket        = 664
+chmod-socket        = 666
 EOF
     else
         cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
@@ -87,8 +87,24 @@ python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
 python manage.py collectstatic --noinput
+EOF
+    if [[ "${UWSGI_UID}" != 0 ]] && [[ "${UWSGI_GID}" != 0 ]]; then
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --ini ${PROJECT_NAME}_uwsgi.ini
+EOF
+    elif [[ "${UWSGI_UID}" != 0 ]]; then
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+uwsgi --uid ${UWSGI_UID} --ini ${PROJECT_NAME}_uwsgi.ini
+EOF
+    elif [[ "${UWSGI_GID}" != 0 ]]; then
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+uwsgi --gid ${UWSGI_GID} --ini ${PROJECT_NAME}_uwsgi.ini
+EOF
+    else
+        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
 uwsgi --ini ${PROJECT_NAME}_uwsgi.ini
 EOF
+    fi
     chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
 }
 
@@ -430,9 +446,13 @@ EOF
 }
 
 ### main ###
-OPTIONS=n
-LONGOPTIONS=nginx
+OPTIONS=no:z:u:g:h
+LONGOPTIONS=nginx,owner-uid:,owner-gid:,uwsgi-uid:,uwsgi-gid:,help
 WITH_NGINX=false
+OWNER_UID=1000
+OWNER_GID=1000
+UWSGI_UID=0
+UWSGI_GID=0
 
 # -temporarily store output to be able to check for errors
 # -e.g. use “--options” parameter by name to activate quoting/enhanced mode
@@ -453,6 +473,42 @@ while true; do
             echo "### Generate with Nginx ###"
             WITH_NGINX=true
             shift
+            ;;
+        -o|--owner-uid)
+            echo "### Set owner UID = ${2} ###"
+            OWNER_UID="$2"
+            shift 2
+            ;;
+        -z|--owner-gid)
+            echo "### Set owner UID = ${2} ###"
+            OWNER_GID="$2"
+            shift 2
+            ;;
+        -u|--uwsgi-uid)
+            echo "### Set uWSGI UID = ${2} ###"
+            UWSGI_UID="$2"
+            shift 2
+            ;;
+        -g|--uwsgi-gid)
+            echo "### Set uWSGI GID = ${2} ###"
+            UWSGI_GID="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "### Help ###"
+            cat >&1 << EOF
+
+Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
+         -n|--nginx     = Include Nginx service definition files with build output
+         -h|--help      = Help/Usage output
+         -o|--owner-uid = Host UID to attribute output file ownership to (default 1000)
+         -z|--owner-gid = Host GID to attribute output file ownership to (default 1000)
+         -u|--uwsgi-uid = Host UID to run the uwsgi service as (default 1000)
+         -g|--uwsgi-gid = Host GID to run the uwsgi service as (default 1000)
+
+EOF
+            shift
+            exit 0;
             ;;
         --)
             shift
@@ -484,7 +540,10 @@ source /venv/bin/activate
 _generate_env
 source /code/$PROJECT_NAME/$PROJECT_NAME/.env
 
-mkdir -p /code/$PROJECT_NAME/apps /code/$PROJECT_NAME/plugins
+mkdir -p /code/$PROJECT_NAME/static \
+    /code/$PROJECT_NAME/media \
+    /code/$PROJECT_NAME/apps \
+    /code/$PROJECT_NAME/plugins
 touch /code/$PROJECT_NAME/plugins/__init__.py
 _generate_settings
 _generate_uwsgi_ini
@@ -495,6 +554,7 @@ fi
 _generate_dockerfile
 _generate_docker_entrypoint_sh
 _generate_docker_compose_yml
+chown -R $OWNER_UID:$OWNER_GID /code/$PROJECT_NAME
 
 # clean up 
 if $RM_REQTS_FILE; then
