@@ -249,23 +249,7 @@ $ source venv/bin/activate
 (venv)$ ./run_uwsgi.sh
 ```
 
-**NOTE**: Depending on your system you may observe the following warning
-
-```console
-!!! no internal routing support, rebuild with pcre support !!!
-```
-
-In this case Nginx might respond with **502 Bad Gateway** and have logs similar to:
-
-```console
-$ docker-compose logs nginx
-Attaching to nginx
-nginx       | 2018/05/29 20:34:19 [error] 7#7: *4 connect() to unix:///code/example.sock failed (111: Connection refused) while connecting to upstream, client: 172.19.0.1, server: 127.0.0.1:8080, request: "GET / HTTP/1.1", upstream: "uwsgi://unix:///code/example.sock:", host: "127.0.0.1:8080"
-nginx       | 172.19.0.1 - - [29/May/2018:20:34:19 +0000] "GET / HTTP/1.1" 502 174 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:60.0) Gecko/20100101 Firefox/60.0" "-"
-...
-```
-
-You'll either need to install the appropriate pcre packages and rebuild `uwsgi`, or run everything with docker.
+**NOTE**: Depending on your system (macOS) you may not be able to run the Nginx server using sockets mounted from the host. For more information refer to this Github issue: [Support for sharing unix sockets](https://github.com/docker/for-mac/issues/483). If this is the case, you'll either need to run your Nginx server over ports, or run everything in Docker.
 
 ## Run everything with docker
 
