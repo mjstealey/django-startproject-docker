@@ -33,7 +33,7 @@ chdir               = ./
 ; load Django's WSGI file/module
 module              = ${PROJECT_NAME}.wsgi
 ; set PYTHONHOME/virtualenv (full path)
-virtualenv          = ./venv
+;virtualenv          = ./venv ;;; now set in run_uwsgi script
 ; enable master process
 master              = true
 ; spawn the specified number of workers/processes
@@ -82,7 +82,11 @@ _generate_run_uwsgi_sh() {
     cat > /code/$PROJECT_NAME/run_uwsgi.sh << EOF
 #!/usr/bin/env bash
 
-source venv/bin/activate
+if [[ "\${USE_DOT_VENV}" -eq 1 ]]; then
+    source ./.venv/bin/activate
+else
+    source ./venv/bin/activate
+fi
 python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
@@ -90,28 +94,53 @@ python manage.py collectstatic --noinput
 EOF
     if [[ "${UWSGI_UID}" != 0 ]] && [[ "${UWSGI_GID}" != 0 ]]; then
         cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
-uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --ini ${PROJECT_NAME}_uwsgi.ini
+if [[ "\${USE_DOT_VENV}" -eq 1 ]]; then
+    uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
+else
+    uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
+fi
 EOF
     elif [[ "${UWSGI_UID}" != 0 ]]; then
         cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
-uwsgi --uid ${UWSGI_UID} --ini ${PROJECT_NAME}_uwsgi.ini
+if [[ "${USE_DOT_VENV}" -eq 1 ]]; then
+    uwsgi --uid ${UWSGI_UID} --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
+else
+    uwsgi --uid ${UWSGI_UID} --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
+fi
 EOF
     elif [[ "${UWSGI_GID}" != 0 ]]; then
         cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
-uwsgi --gid ${UWSGI_GID} --ini ${PROJECT_NAME}_uwsgi.ini
+if [[ "${USE_DOT_VENV}" -eq 1 ]]; then
+    uwsgi --gid ${UWSGI_GID} --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
+else
+    uwsgi --gid ${UWSGI_GID} --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
+fi
 EOF
     else
         cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
-uwsgi --ini ${PROJECT_NAME}_uwsgi.ini
+if [[ "${USE_DOT_VENV}" -eq 1 ]]; then
+    uwsgi --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
+else
+    uwsgi --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
+fi
 EOF
     fi
     chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
 }
 
+### generate .gitignore file ###
+_generate_dot_gitignore() {
+    cat > /code/$PROJECT_NAME/.gitignore << EOF
+venv
+.venv
+${PROJECT_NAME}/settings/secrets.py
+EOF
+}
+
 ### generate Dockerfile file ###
 _generate_dockerfile() {
     cat > /code/$PROJECT_NAME/Dockerfile << EOF
-FROM python:3.6
+FROM python:3.7
 MAINTAINER Michael J. Stealey <mjstealey@gmail.com>
 
 RUN apt-get update && apt-get install -y \
@@ -136,13 +165,14 @@ until [ \$(pg_isready -h database -q)\$? -eq 0 ]; do
   sleep 1
 done
 
-virtualenv -p /usr/local/bin/python venv
-source venv/bin/activate
-venv/bin/pip install --upgrade pip
-venv/bin/pip install -r requirements.txt
+virtualenv -p /usr/local/bin/python .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
 
 >&2 echo "Postgres is up - continuing"
 
+export USE_DOT_VENV=1
 ./run_uwsgi.sh
 
 exec "\$@"
@@ -531,11 +561,11 @@ fi
 pip install virtualenv
 virtualenv -p /usr/local/bin/python /venv
 source /venv/bin/activate
-/venv/bin/pip install --upgrade pip
-/venv/bin/pip install -r requirements.txt
+pip install --upgrade pip
+pip install -r requirements.txt
 
-/venv/bin/django-admin startproject $PROJECT_NAME
-/venv/bin/pip freeze  > /code/$PROJECT_NAME/requirements.txt
+django-admin startproject $PROJECT_NAME
+pip freeze  > /code/$PROJECT_NAME/requirements.txt
 
 _generate_env
 source /code/$PROJECT_NAME/$PROJECT_NAME/.env
@@ -547,6 +577,7 @@ mkdir -p /code/$PROJECT_NAME/static \
 touch /code/$PROJECT_NAME/plugins/__init__.py
 _generate_settings
 _generate_uwsgi_ini
+_generate_dot_gitignore
 _generate_run_uwsgi_sh
 if $WITH_NGINX; then
     _generate_nginx_conf
@@ -556,7 +587,7 @@ _generate_docker_entrypoint_sh
 _generate_docker_compose_yml
 chown -R $OWNER_UID:$OWNER_GID /code/$PROJECT_NAME
 
-# clean up 
+# clean up
 if $RM_REQTS_FILE; then
     rm -f /code/requirements.txt
 fi
