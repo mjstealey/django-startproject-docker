@@ -6,9 +6,9 @@ Django is a high-level Python Web framework that encourages rapid development an
 
 ### What this project does:
 
-Generates the necessary files to start a new Django project using Docker based scripts with
+Generates the necessary files to start a new [Django 2.1](https://www.djangoproject.com) project using Docker based scripts with
 
-- Python 3.6 based Docker definition ([python:3.6](https://hub.docker.com/_/python/))
+- Python 3.7 based Docker definition ([python:3.7](https://hub.docker.com/_/python/))
 - Virtual environment managed by virtualenv ([virtualenv tool](https://virtualenv.pypa.io/en/stable/))
 - PostgreSQL database backend adapter ([psycopg2-binary](https://pypi.org/project/psycopg2-binary/))
 - uWSGI based run scripts ([uWGSI](https://pypi.org/project/uWSGI/))
@@ -17,6 +17,11 @@ Generates the necessary files to start a new Django project using Docker based s
   - Implements uWSGI socket file
   - Provides an HTTP service configuration for use in Docker
   - Provides stub configuration for HTTPS / SSL use
+  - Unix socket protocol for Django services
+  - Host ports mapped as `8080:80` and `8443:443` by default
+- Optional split settings files (`--split-settings` flag)
+    - Creates a `settings/` directory with proper reference updates
+    - Splits the `settings.py` file into separate files based on their purpose (api, applications, auth, config, logging, main, secrets and tasks)
 
 Project files are designed to be run either locally using virtualenv, or in Docker using the generated `docker-compose.yml` file. Virtualenv is also used within Docker for improved environment isolation.
 
@@ -50,18 +55,19 @@ Configure the docker run call to specify your project's settings
 - Volume mount a local directory to `:/code` to save the Django project files to
 - Additional options can be found using `-h|--help`
 
-  ```console
-  $ docker run --rm mjstealey/django-startproject-docker --help
-  ### Help ###
-  
-  Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
-           -n|--nginx     = Include Nginx service definition files with build output
-           -h|--help      = Help/Usage output
-           -o|--owner-uid = Host UID to attribute output file ownership to (default=1000)
-           -z|--owner-gid = Host GID to attribute output file ownership to (default=1000)
-           -u|--uwsgi-uid = Host UID to run the uwsgi service as (default=0)
-           -g|--uwsgi-gid = Host GID to run the uwsgi service as (default=0)
-  ```
+```console
+$ docker run --rm mjstealey/django-startproject-docker --help
+### Help ###
+
+Usage: django-startproject-docker [-nsh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
+         -n|--nginx          = Include Nginx service definition files with build output
+         -s|--split-settings = Split settings files into their own directory structure
+         -h|--help           = Help/Usage output
+         -o|--owner-uid      = Host UID to attribute output file ownership to (default=1000)
+         -z|--owner-gid      = Host GID to attribute output file ownership to (default=1000)
+         -u|--uwsgi-uid      = Host UID to run the uwsgi service as (default=0)
+         -g|--uwsgi-gid      = Host GID to run the uwsgi service as (default=0)
+```
 
 ### Option 1: uWSGI runs the HTTP server
 
@@ -79,25 +85,19 @@ docker run --rm \
 The above generates output files as a new Django project named `example`.
 
 ```console
-$ tree example
+$ tree -a example
 example                         # Project root
-├── Dockerfile                  # Dockerfile definition for django container
+├── .gitignore                  # Git .gitignore file
+├── Dockerfile                  # Dockerfile definition for django constainer
 ├── apps                        # Django apps directory
 ├── docker-compose.yml          # Compose definition for running django app
 ├── docker-entrypoint.sh        # Entry point definition for django container
 ├── example                     # Primary project directory
+│   ├── .env                    # Python .env file
 │   ├── __init__.py             # Python init
-│   ├── settings                # Django settings directory
-│   │   ├── __init__.py         # Python init
-│   │   ├── api.py              # API Django settings file (initially blank)
-│   │   ├── applications.py     # Installed apps Django settings file
-│   │   ├── auth.py             # Authentication Django settings file (initially blank)
-│   │   ├── config.py           # Configuration Django settings file
-│   │   ├── dummy_secrets.py    # Django secrets file (example file)
-│   │   ├── logging.py          # Logging Django settings file
-│   │   ├── main.py             # Main Django settings file
-│   │   ├── secrets.py          # Django secrets file (with key)
-│   │   └── tasks.py            # Tasks Django settings file (initially blank)
+│   ├── dummy_secrets.py        # Django secrets file (example file)
+│   ├── secrets.py              # Django secrets file (with key)
+│   ├── settings.py             # Main Django settings file
 │   ├── urls.py                 # Django urls file
 │   └── wsgi.py                 # Django WSGI file
 ├── example_uwsgi.ini           # uWSGI configuration file
@@ -109,7 +109,7 @@ example                         # Project root
 ├── run_uwsgi.sh                # uWSGI run script
 └── static                      # Django static files directory
 
-6 directories, 21 files
+5 directories, 16 files
 ```
 
 File ownership should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
@@ -125,33 +125,25 @@ docker run --rm \
   mjstealey/django-startproject-docker \
   --nginx \
   --owner-uid $(id -u) \
-  --owner-gid $(id -g) \
-  --uwsgi-uid $(id -u) \
-  --uwsgi-gid $(id -g)
+  --owner-gid $(id -g)
 ```
 
 The above generates output files as a new Django project named `example`.
 
 ```console
-$ tree example
+$ tree -a example
 example                         # Project root
-├── Dockerfile                  # Dockerfile definition for django container
+├── .gitignore                  # Git .gitignore file
+├── Dockerfile                  # Dockerfile definition for django constainer
 ├── apps                        # Django apps directory
 ├── docker-compose.yml          # Compose definition for running django app
 ├── docker-entrypoint.sh        # Entry point definition for django container
 ├── example                     # Primary project directory
+│   ├── .env                    # Python .env file
 │   ├── __init__.py             # Python init
-│   ├── settings                # Django settings directory
-│   │   ├── __init__.py         # Python init
-│   │   ├── api.py              # API Django settings file (initially blank)
-│   │   ├── applications.py     # Installed apps Django settings file
-│   │   ├── auth.py             # Authentication Django settings file (initially blank)
-│   │   ├── config.py           # Configuration Django settings file
-│   │   ├── dummy_secrets.py    # Django secrets file (example file)
-│   │   ├── logging.py          # Logging Django settings file
-│   │   ├── main.py             # Main Django settings file
-│   │   ├── secrets.py          # Django secrets file (with key)
-│   │   └── tasks.py            # Tasks Django settings file (initially blank)
+│   ├── dummy_secrets.py        # Django secrets file (example file)
+│   ├── secrets.py              # Django secrets file (with key)
+│   ├── settings.py             # Main Django settings file
 │   ├── urls.py                 # Django urls file
 │   └── wsgi.py                 # Django WSGI file
 ├── example_uwsgi.ini           # uWSGI configuration file
@@ -164,15 +156,12 @@ example                         # Project root
 │   └── __init__.py             # Python init
 ├── requirements.txt            # Pip install requirements file
 ├── run_uwsgi.sh                # uWSGI run script
-├── static                      # Django static files directory
-└── uwsgi_params                # Nginx uwsgi_params file
+└── static                      # Django static files directory
 
-7 directories, 24 files
+6 directories, 19 files
 ```
 
 File ownership should be that of the user that made the `docker run` call. Ownership of files is an explicit option as the files are created by a docker container, and would otherwise be owned by potentially a non-system user.
-
-Additionally the `uwsgi` service will be spawned using the user's UID and GID values which can be observed in the `run_uwsgi.sh` script (these would otherwise default to the root user).
 
 ## Running your project
 
@@ -213,6 +202,10 @@ $ source venv/bin/activate
 (venv)$ pip install -r requirements.txt
 (venv)$ ./run_uwsgi.sh
 ```
+
+**NOTE**: Additionally the `uwsgi` service will be spawned using the user's **UID** and **GID** values which can be observed in the `run_uwsgi.sh` script (these would otherwise default to `UID:GID` == `1000:1000`).
+
+- `(venv)$ UWSGI_UID=$(id -u) UWSGI_GID=$(id -g) ./run_uwsgi.sh`
 
 Validate that the Django is running site at [http://localhost:8000/](http://localhost:8000/)
 
@@ -294,6 +287,122 @@ Check the status of the containers:
     ```
 
     After a few moments validate that your Django server is running at [http://localhost:8080/](http://localhost:8080/)
+
+## Split settings files
+
+The `settings.py` file is removed and replaced by a `settings/` directory with separate files based on their purpose.
+
+### uWSGI runs the HTTP server
+
+Default configuration runs on port `8000`
+
+```
+docker run --rm \
+  -e PROJECT_NAME=example \
+  -v $(pwd):/code \
+  mjstealey/django-startproject-docker \
+  --split-settings \
+  --owner-uid $(id -u) \
+  --owner-gid $(id -g)
+```
+
+The above generates output files as a new Django project named `example`.
+
+```console
+$ tree -a example
+example                         # Project root
+├── .gitignore                  # Git .gitignore file
+├── Dockerfile                  # Dockerfile definition for django container
+├── apps                        # Django apps directory
+├── docker-compose.yml          # Compose definition for running django app
+├── docker-entrypoint.sh        # Entry point definition for django container
+├── example                     # Primary project directory
+│   ├── .env                    # Python .env file
+│   ├── __init__.py             # Python init
+│   ├── settings                # Django settings directory
+│   │   ├── __init__.py         # Python init
+│   │   ├── api.py              # API Django settings file (initially blank)
+│   │   ├── applications.py     # Installed apps Django settings file
+│   │   ├── auth.py             # Authentication Django settings file (initially blank)
+│   │   ├── config.py           # Configuration Django settings file
+│   │   ├── dummy_secrets.py    # Django secrets file (example file)
+│   │   ├── logging.py          # Logging Django settings file
+│   │   ├── main.py             # Main Django settings file
+│   │   ├── secrets.py          # Django secrets file (with key)
+│   │   └── tasks.py            # Tasks Django settings file (initially blank)
+│   ├── urls.py                 # Django urls file
+│   └── wsgi.py                 # Django WSGI file
+├── example_uwsgi.ini           # uWSGI configuration file
+├── manage.py                   # Django manage.py file
+├── media                       # Django media files directory
+├── plugins                     # Django plugins directory
+│   └── __init__.py             # Python init
+├── requirements.txt            # Pip install requirements file
+├── run_uwsgi.sh                # uWSGI run script
+└── static                      # Django static files directory
+
+6 directories, 23 files
+```
+
+### Nginx runs the HTTP server
+
+Default configuration runs on port `8080`
+
+```
+docker run --rm \
+  -e PROJECT_NAME=example \
+  -v $(pwd):/code \
+  mjstealey/django-startproject-docker \
+  --nginx \
+  --split-settings \
+  --owner-uid $(id -u) \
+  --owner-gid $(id -g) \
+  --uwsgi-uid $(id -u) \
+  --uwsgi-gid $(id -g)
+```
+
+The above generates output files as a new Django project named `example`.
+
+```console
+$ tree -a example
+example                         # Project root
+├── .gitignore                  # Git .gitignore file
+├── Dockerfile                  # Dockerfile definition for django container
+├── apps                        # Django apps directory
+├── docker-compose.yml          # Compose definition for running django app
+├── docker-entrypoint.sh        # Entry point definition for django container
+├── example                     # Primary project directory
+│   ├── .env                    # Python .env file
+│   ├── __init__.py             # Python init
+│   ├── settings                # Django settings directory
+│   │   ├── __init__.py         # Python init
+│   │   ├── api.py              # API Django settings file (initially blank)
+│   │   ├── applications.py     # Installed apps Django settings file
+│   │   ├── auth.py             # Authentication Django settings file (initially blank)
+│   │   ├── config.py           # Configuration Django settings file
+│   │   ├── dummy_secrets.py    # Django secrets file (example file)
+│   │   ├── logging.py          # Logging Django settings file
+│   │   ├── main.py             # Main Django settings file
+│   │   ├── secrets.py          # Django secrets file (with key)
+│   │   └── tasks.py            # Tasks Django settings file (initially blank)
+│   ├── urls.py                 # Django urls file
+│   └── wsgi.py                 # Django WSGI file
+├── example_uwsgi.ini           # uWSGI configuration file
+├── manage.py                   # Django manage.py file
+├── media                       # Django media files directory
+├── nginx                       # Nginx configuration directory
+│   ├── example_nginx.conf      # HTTP example Nginx conf
+│   └── example_nginx_ssl.conf  # HTTPS example Nginx conf
+├── plugins                     # Django plugins directory
+│   └── __init__.py             # Python init
+├── requirements.txt            # Pip install requirements file
+├── run_uwsgi.sh                # uWSGI run script
+├── static                      # Django static files directory
+└── uwsgi_params                # Nginx uwsgi_params file
+
+7 directories, 26 files
+```
+
 
 ## Additional References
 
