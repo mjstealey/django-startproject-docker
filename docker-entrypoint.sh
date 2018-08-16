@@ -43,18 +43,27 @@ threads             = 1
 EOF
     if $WITH_NGINX; then
         cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
-; bind to the specified UNIX/TCP socket using uwsgi protocol (full path)
+; add an http router/server on the specified address **port**
+;http                = :8000
+; map mountpoint to static directory (or file) **port**
+;static-map          = /static/=static/
+;static-map          = /media/=media/
+; bind to the specified UNIX/TCP socket using uwsgi protocol (full path) **socket**
 uwsgi-socket        = ./${PROJECT_NAME}.sock
-; ... with appropriate permissions - may be needed
+; ... with appropriate permissions - may be needed **socket**
 chmod-socket        = 666
 EOF
     else
         cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
-; add an http router/server on the specified address
+; add an http router/server on the specified address **port**
 http                = :8000
-; map mountpoint to static directory (or file)
+; map mountpoint to static directory (or file) **port**
 static-map          = /static/=static/
 static-map          = /media/=media/
+; bind to the specified UNIX/TCP socket using uwsgi protocol (full path) **socket**
+;uwsgi-socket        = ./${PROJECT_NAME}.sock
+; ... with appropriate permissions - may be needed **socket**
+;chmod-socket        = 666
 EOF
     fi
     cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
@@ -91,40 +100,13 @@ python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
 python manage.py collectstatic --noinput
-EOF
-    if [[ "${UWSGI_UID}" != 0 ]] && [[ "${UWSGI_GID}" != 0 ]]; then
-        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+
 if [[ "\${USE_DOT_VENV}" -eq 1 ]]; then
-    uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
+    uwsgi --uid \${UWSGI_UID:-1000} --gid \${UWSGI_GID:-1000}  --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
 else
-    uwsgi --uid ${UWSGI_UID} --gid ${UWSGI_GID} --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
+    uwsgi --uid \${UWSGI_UID:-1000} --gid \${UWSGI_GID:-1000}  --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
 fi
 EOF
-    elif [[ "${UWSGI_UID}" != 0 ]]; then
-        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
-if [[ "${USE_DOT_VENV}" -eq 1 ]]; then
-    uwsgi --uid ${UWSGI_UID} --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
-else
-    uwsgi --uid ${UWSGI_UID} --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
-fi
-EOF
-    elif [[ "${UWSGI_GID}" != 0 ]]; then
-        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
-if [[ "${USE_DOT_VENV}" -eq 1 ]]; then
-    uwsgi --gid ${UWSGI_GID} --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
-else
-    uwsgi --gid ${UWSGI_GID} --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
-fi
-EOF
-    else
-        cat >> /code/$PROJECT_NAME/run_uwsgi.sh << EOF
-if [[ "${USE_DOT_VENV}" -eq 1 ]]; then
-    uwsgi --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
-else
-    uwsgi --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
-fi
-EOF
-    fi
     chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
 }
 
@@ -135,6 +117,15 @@ venv
 .venv
 ${PROJECT_NAME}/settings/secrets.py
 EOF
+    if $SPLIT_SETTINGS; then
+        cat > /code/$PROJECT_NAME/.gitignore << EOF
+${PROJECT_NAME}/settings/.env
+EOF
+    else
+        cat > /code/$PROJECT_NAME/.gitignore << EOF
+${PROJECT_NAME}/.env
+EOF
+    fi
 }
 
 ### generate Dockerfile file ###
@@ -172,8 +163,7 @@ pip install -r requirements.txt
 
 >&2 echo "Postgres is up - continuing"
 
-export USE_DOT_VENV=1
-./run_uwsgi.sh
+USE_DOT_VENV=1 ./run_uwsgi.sh
 
 exec "\$@"
 EOF
@@ -207,6 +197,8 @@ services:
     hostname: django
     environment:
       POSTGRES_HOST: database
+      UWSGI_UID: \${UWSGI_UID:-1000}
+      UWSGI_GID: \${UWSGI_GID:-1000}
     ports:
       - 8000:8000
     volumes:
@@ -282,21 +274,22 @@ upstream django {
 
 server {
     listen 80;
-    server_name 127.0.0.1:8080; # substitute your machine's IP address or FQDN
-    return 301 https://127.0.0.1:8443\$request_uri; # substitute your machine's IP address or FQDN
+    return 307 https://127.0.0.1:8443\$request_uri?; # substitute your machine's IP address or FQDN
 }
-
-# configuration of the server
 server {
-    # the port your site will be served on
-    listen      443;
+    listen   443;
+    # the domain name it will serve for
+    server_name 127.0.0.1:8443; # substitute your machine's IP address or FQDN
+
+    # If they come here using HTTP, bounce them to the correct scheme
+    error_page 497 https://\$server_name\$request_uri;
+    # Or if you're on the default port 443, then this should work too
+    # error_page 497 https://$server_name$request_uri;
 
     ssl on;
     ssl_certificate /etc/ssl/SSL.crt;
     ssl_certificate_key /etc/ssl/SSL.key;
 
-    # the domain name it will serve for
-    server_name 127.0.0.1:8443; # substitute your machine's IP address or FQDN
     charset     utf-8;
 
     # max upload size
@@ -344,11 +337,80 @@ uwsgi_param  SERVER_NAME        \$server_name;
 EOF
 }
 
-### populate settings directory
+_generate_secrets_files() {
+    local SETTINGS_DIR=$1
+    local SETTINGS_PY=$SETTINGS_DIR/settings.py
+    # generate secrets.py
+    cat > ${SETTINGS_DIR}/dummy_secrets.py << EOF
+# This file, dummy_secrets, provides an example of how to configure
+# sregistry with your authentication secrets. Copy it to secrets.py and
+# configure the settings you need.
+
+# Secret Key
+# You must uncomment, and set SECRET_KEY to a secure random value
+# e.g. https://djskgen.herokuapp.com/
+
+#SECRET_KEY = 'xxxxxxxxxxxxxxxxxx'
+
+EOF
+    cat > ${SETTINGS_DIR}/secrets.py << EOF
+# This file, dummy_secrets, provides an example of how to configure
+# sregistry with your authentication secrets. Copy it to secrets.py and
+# configure the settings you need.
+
+# Secret Key
+# You must uncomment, and set SECRET_KEY to a secure random value
+# e.g. https://djskgen.herokuapp.com/
+
+EOF
+    sed -n -e '0,/^# SECURITY WARNING/{//p;}' $SETTINGS_PY >> $SETTINGS_DIR/secrets.py
+    sed -n -e '/^SECRET_KEY/p' $SETTINGS_PY >> $SETTINGS_DIR/secrets.py
+    sed -i -e '0,/^# SECURITY WARNING/{//d;}' $SETTINGS_PY
+    sed -i -e '/^SECRET_KEY/d' $SETTINGS_PY
+}
+
+### create secrets file from settings.py
 _generate_settings() {
-    local SETTINGS_DIR=/code/$PROJECT_NAME/$PROJECT_NAME/settings
     local SETTINGS_PY=/code/$PROJECT_NAME/$PROJECT_NAME/settings.py
+    # secrets files
+    _generate_secrets_files $(dirname $SETTINGS_PY)
+    # add .env
+    sed -i '/import os/a from dotenv import load_dotenv\nload_dotenv(\x27'${PROJECT_NAME}'\x2F.env\x27)' $SETTINGS_PY
+    # set debug
+    sed -i 's/^DEBUG.*/DEBUG = os.getenv(\x27DEBUG\x27, True)/' $SETTINGS_PY
+    # set allowed hosts
+    sed -i 's/^ALLOWED_HOSTS.*/ALLOWED_HOSTS = ["*"]/' $SETTINGS_PY
+    # import secrets files
+    cat >> $SETTINGS_PY << EOF
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+try:
+    from .secrets import *
+except ImportError:
+    pass
+EOF
+    # set database
+    sed -n -i '/^DATABASES/{:a;N;/\n}/!ba;N;s/.*\n/ \
+DATABASES = { \
+    \x27default\x27: { \
+        \x27ENGINE\x27: \x27django.db.backends.postgresql\x27, \
+        \x27NAME\x27: os.getenv(\x27POSTGRES_DB\x27, \x27postgres\x27), \
+        \x27USER\x27: os.getenv(\x27POSTGRES_USER\x27, \x27postgres\x27), \
+        \x27PASSWORD\x27: os.getenv(\x27POSTGRES_PASSWORD\x27, \x27postgres\x27), \
+        \x27HOST\x27: os.getenv(\x27POSTGRES_HOST\x27, \x27127.0.0.1\x27), \
+        \x27PORT\x27: os.getenv(\x27POSTGRES_PORT\x27, \x275432\x27), \
+    } \
+}\n/};p' $SETTINGS_PY
+}
+
+### populate settings directory
+_generate_split_settings() {
+    local SETTINGS_DIR=/code/$PROJECT_NAME/$PROJECT_NAME/settings
+    local SETTINGS_PY=$SETTINGS_DIR/settings.py
     mkdir -p $SETTINGS_DIR
+    mv $(dirname $SETTINGS_DIR)/settings.py $SETTINGS_PY
     # generate __init__.py
     cat > $SETTINGS_DIR/__init__.py << EOF
 from importlib import import_module
@@ -427,33 +489,8 @@ LOGGING = {
     },
 }
 EOF
-    # generate secrets.py
-    cat > $SETTINGS_DIR/dummy_secrets.py << EOF
-# This file, dummy_secrets, provides an example of how to configure
-# sregistry with your authentication secrets. Copy it to secrets.py and
-# configure the settings you need.
-
-# Secret Key
-# You must uncomment, and set SECRET_KEY to a secure random value
-# e.g. https://djskgen.herokuapp.com/
-
-#SECRET_KEY = 'xxxxxxxxxxxxxxxxxx'
-
-EOF
-    cat > $SETTINGS_DIR/secrets.py << EOF
-# This file, dummy_secrets, provides an example of how to configure
-# sregistry with your authentication secrets. Copy it to secrets.py and
-# configure the settings you need.
-
-# Secret Key
-# You must uncomment, and set SECRET_KEY to a secure random value
-# e.g. https://djskgen.herokuapp.com/
-
-EOF
-    sed -n -e '0,/^# SECURITY WARNING/{//p;}' $SETTINGS_PY >> $SETTINGS_DIR/secrets.py
-    sed -n -e '/^SECRET_KEY/p' $SETTINGS_PY >> $SETTINGS_DIR/secrets.py
-    sed -i -e '0,/^# SECURITY WARNING/{//d;}' $SETTINGS_PY
-    sed -i -e '/^SECRET_KEY/d' $SETTINGS_PY
+    # secrets files
+    _generate_secrets_files $SETTINGS_DIR
     # generate tasks.py
     touch $SETTINGS_DIR/tasks.py
     # generate main.py
@@ -476,13 +513,14 @@ EOF
 }
 
 ### main ###
-OPTIONS=no:z:u:g:h
-LONGOPTIONS=nginx,owner-uid:,owner-gid:,uwsgi-uid:,uwsgi-gid:,help
+OPTIONS=nso:z:u:g:h
+LONGOPTIONS=nginx,split-settings,owner-uid:,owner-gid:,uwsgi-uid:,uwsgi-gid:,help
 WITH_NGINX=false
+SPLIT_SETTINGS=false
 OWNER_UID=1000
 OWNER_GID=1000
-UWSGI_UID=0
-UWSGI_GID=0
+UWSGI_UID=1000
+UWSGI_GID=1000
 
 # -temporarily store output to be able to check for errors
 # -e.g. use “--options” parameter by name to activate quoting/enhanced mode
@@ -502,6 +540,11 @@ while true; do
         -n|--nginx)
             echo "### Generate with Nginx ###"
             WITH_NGINX=true
+            shift
+            ;;
+        -s|--split-settings)
+            echo "### Generate with split settings files ###"
+            SPLIT_SETTINGS=true
             shift
             ;;
         -o|--owner-uid)
@@ -528,13 +571,14 @@ while true; do
             echo "### Help ###"
             cat >&1 << EOF
 
-Usage: django-startproject-docker [-nh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
-         -n|--nginx     = Include Nginx service definition files with build output
-         -h|--help      = Help/Usage output
-         -o|--owner-uid = Host UID to attribute output file ownership to (default=1000)
-         -z|--owner-gid = Host GID to attribute output file ownership to (default=1000)
-         -u|--uwsgi-uid = Host UID to run the uwsgi service as (default=0)
-         -g|--uwsgi-gid = Host GID to run the uwsgi service as (default=0)
+Usage: django-startproject-docker [-nsh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
+         -n|--nginx          = Include Nginx service definition files with build output
+         -s|--split-settings = Split settings files into their own directory structure
+         -h|--help           = Help/Usage output
+         -o|--owner-uid      = Host UID to attribute output file ownership to (default=1000)
+         -z|--owner-gid      = Host GID to attribute output file ownership to (default=1000)
+         -u|--uwsgi-uid      = Host UID to run the uwsgi service as (default=0)
+         -g|--uwsgi-gid      = Host GID to run the uwsgi service as (default=0)
 
 EOF
             shift
@@ -575,7 +619,11 @@ mkdir -p /code/$PROJECT_NAME/static \
     /code/$PROJECT_NAME/apps \
     /code/$PROJECT_NAME/plugins
 touch /code/$PROJECT_NAME/plugins/__init__.py
-_generate_settings
+if $SPLIT_SETTINGS; then
+    _generate_split_settings
+else
+    _generate_settings
+fi
 _generate_uwsgi_ini
 _generate_dot_gitignore
 _generate_run_uwsgi_sh
