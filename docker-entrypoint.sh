@@ -18,7 +18,7 @@ export POSTGRES_PASSWORD=postgres
 export POSTGRES_USER=postgres
 export PGDATA=/var/lib/postgresql/data
 export POSTGRES_DB=postgres
-export POSTGRES_HOST=127.0.0.1
+export POSTGRES_HOST=database
 export POSTGRES_PORT=5432
 EOF
 }
@@ -40,6 +40,8 @@ master              = true
 workers             = 1
 ; run each worker in prethreaded mode with the specified number of threads
 threads             = 1
+; use protocol uwsgi over TCP socket (use if UNIX file socket is not an option)
+;socket              = :8000
 EOF
     if $WITH_NGINX; then
         cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
@@ -91,11 +93,11 @@ _generate_run_uwsgi_sh() {
     cat > /code/$PROJECT_NAME/run_uwsgi.sh << EOF
 #!/usr/bin/env bash
 
-if [[ "\${USE_DOT_VENV}" -eq 1 ]]; then
-    source ./.venv/bin/activate
-else
-    source ./venv/bin/activate
-fi
+#if [[ "\${USE_DOT_VENV}" -eq 1 ]]; then
+#    source ./.venv/bin/activate
+#else
+#    source ./venv/bin/activate
+#fi
 python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
@@ -151,15 +153,15 @@ _generate_docker_entrypoint_sh() {
 #!/usr/bin/env bash
 set -e
 
-until [ \$(pg_isready -h database -q)\$? -eq 0 ]; do
-  >&2 echo "Postgres is unavailable - sleeping"
-  sleep 1
-done
-
 virtualenv -p /usr/local/bin/python .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+
+until [ \$(pg_isready -h database -q)\$? -eq 0 ]; do
+  >&2 echo "Postgres is unavailable - sleeping"
+  sleep 1
+done
 
 >&2 echo "Postgres is up - continuing"
 
@@ -173,20 +175,14 @@ EOF
 ### generate docker-compose.yml file ###
 _generate_docker_compose_yml() {
     cat > /code/$PROJECT_NAME/docker-compose.yml << EOF
-version: '3.0'
+version: '3.6'
 services:
 
   database:
     image: postgres:10
     container_name: database
-    hostname: database
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_USER: ${POSTGRES_USER}
-      PGDATA: ${PGDATA}
-      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - 5432:${POSTGRES_PORT}
+      - 5432:\${POSTGRES_PORT:-5432}
 
   django:
     build:
@@ -194,11 +190,6 @@ services:
       dockerfile: Dockerfile
     image: django
     container_name: django
-    hostname: django
-    environment:
-      POSTGRES_HOST: database
-      UWSGI_UID: \${UWSGI_UID:-1000}
-      UWSGI_GID: \${UWSGI_GID:-1000}
     ports:
       - 8000:8000
     volumes:
@@ -234,7 +225,9 @@ _generate_nginx_conf() {
 
 # the upstream component nginx needs to connect to
 upstream django {
-    server unix:///code/${PROJECT_NAME}.sock; # for a file socket
+    server unix:///code/${PROJECT_NAME}.sock; # UNIX file socket
+    # Defaulting to macOS equivalent of docker0 network for TCP socket
+    #server docker.for.mac.localhost:8000; # TCP socket
 }
 
 # configuration of the server
@@ -242,7 +235,7 @@ server {
     # the port your site will be served on
     listen      80;
     # the domain name it will serve for
-    server_name 127.0.0.1:8080; # substitute your machine's IP address or FQDN
+    server_name \$host:8080;
     charset     utf-8;
 
     # max upload size
@@ -269,12 +262,14 @@ EOF
 
 # the upstream component nginx needs to connect to
 upstream django {
-    server unix:///code/${PROJECT_NAME}.sock;
+    server unix:///code/${PROJECT_NAME}.sock; # UNIX file socket
+    # Defaulting to macOS equivalent of docker0 network for TCP socket
+    #server docker.for.mac.localhost:8000; # TCP socket
 }
 
 server {
     listen 80;
-    return 307 https://127.0.0.1:8443\$request_uri?; # substitute your machine's IP address or FQDN
+    return 307 https://\$host:8443\$request_uri?;
 }
 server {
     listen   443;

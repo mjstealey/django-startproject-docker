@@ -165,104 +165,33 @@ File ownership should be that of the user that made the `docker run` call. Owner
 
 ## Running your project
 
-The generated output includes all of the necessary files to start running your Django project locally, or in Docker.
-
-- **NOTE** - The default settings assume that a PostgreSQL database connection exists which is defined in the `docker-compose.yml` file. The user can change this by modifying the contents of `settings/config.py` to the database of their choosing.
-
-## Run locally with Python 3
-
-### Option 1: uWSGI runs the HTTP server 
-
-**Database**
-
-Start the pre-defined PostgreSQL database.
-
-```
-cd example/
-docker-compose up -d database
-```
-
-Validate that the database container is running.
-
-```console
-$ docker-compose ps
-  Name                Command              State           Ports
--------------------------------------------------------------------------
-database   docker-entrypoint.sh postgres   Up      0.0.0.0:5432->5432/tcp
-```
-
-**Django server**
-
-Run using virtualenv.
-
-```
-$ virtualenv -p $(which python3) venv
-$ source venv/bin/activate
-(venv)$ pip install --upgrade pip
-(venv)$ pip install -r requirements.txt
-(venv)$ ./run_uwsgi.sh
-```
-
-**NOTE**: Additionally the `uwsgi` service will be spawned using the user's **UID** and **GID** values which can be observed in the `run_uwsgi.sh` script (these would otherwise default to `UID:GID` == `1000:1000`).
-
-- `(venv)$ UWSGI_UID=$(id -u) UWSGI_GID=$(id -g) ./run_uwsgi.sh`
-
-Validate that the Django is running site at [http://localhost:8000/](http://localhost:8000/)
+The generated output files include everything necessary to start running your Django project in Docker. You can also run the `django` component from your local machine with `virtualenv` and some simple configuration changes.
 
 ![Django startproject init](https://user-images.githubusercontent.com/5332509/39456943-158aefc2-4cb8-11e8-9c46-b92660665209.png)
 
-You will notice that a new directoriy has been created named `venv`. This directory contains the Python binary (allowing creation of environments with various Python versions) and can have its own independent set of installed Python packages in its site directories.
+The default settings assume that a PostgreSQL database connection exists as defined in the `docker-compose.yml` file. The user can change this by modifying the contents of the `settings.py` and `.env` files to the database of their choosing.
 
-### Option 2: Nginx runs the HTTP server
+## Run in Docker
 
-**Database** and **Nginx**
-
-Launch the `database` and `nginx` containers
-
-```console
-$ docker-compose up -d database nginx
-Creating nginx    ... done
-Creating database ... done
-$ docker-compose ps
-  Name                Command              State                      Ports
-----------------------------------------------------------------------------------------------
-database   docker-entrypoint.sh postgres   Up      0.0.0.0:5432->5432/tcp
-nginx      nginx -g daemon off;            Up      0.0.0.0:8443->443/tcp, 0.0.0.0:8080->80/tcp
-```
-
-**Django server**
-
-Run using virtualenv.
-
-```
-$ virtualenv -p $(which python3) venv
-$ source venv/bin/activate
-(venv)$ pip install --upgrade pip
-(venv)$ pip install -r requirements.txt
-(venv)$ ./run_uwsgi.sh
-```
-
-**NOTE**: Depending on your system (macOS) you may not be able to run the Nginx server using sockets mounted from the host. For more information refer to this Github issue: [Support for sharing unix sockets](https://github.com/docker/for-mac/issues/483). If this is the case, you'll either need to run your Nginx server over ports, or run everything in Docker.
-
-## Run everything with docker
-
-Local files are shared with the `django` Docker container (and optionally the `nginx` container) using a volume mount. Volume mounts are specified in the `docker-compose.yml` as follows
+Local files are shared with the `django` Docker container (and `nginx` container) using a volume mount. Volume mounts are specified in the `docker-compose.yml` as follows
 
 ```yaml
+...
 volumes:
   - .:/code                 # Project root
   - ./static:/code/static   # Django static files
   - ./media:/code/media     # Django media files
+...
 ```
 
-Run using the generated `docker-compose.yml` file 
+Launch the compose stack using the generated `docker-compose.yml` file 
 
 ```
 cd example/
 docker-compose up -d
 ```
 
-Check the status of the containers:
+Check the status of the containers and validate the running site:
 
 - uWSGI option
 
@@ -287,6 +216,139 @@ Check the status of the containers:
     ```
 
     After a few moments validate that your Django server is running at [http://localhost:8080/](http://localhost:8080/)
+    
+## Run with virtualenv (Python 3)
+
+### virtualenv and database
+
+Create the virtual environment and install packages
+
+```
+$ virtualenv -p $(which python3) venv
+$ source venv/bin/activate
+(venv)$ pip install --upgrade pip
+(venv)$ pip install -r requirements.txt
+```
+
+Start the pre-defined PostgreSQL database in Docker
+
+- Update `POSTGRES_HOST` in `.env` to reflect the IP of your local machine (For example, from `export POSTGRES_HOST=database` to  `export POSTGRES_HOST=127.0.0.1`)
+- Ensure the `POSTGRES_PORT=5432` is properly mapped to the host in the `docker-compose.yml` file
+
+```
+$ docker-compose up -d database
+```
+
+Validate that the database container is running.
+
+```console
+$ docker-compose ps
+  Name                Command              State           Ports
+-------------------------------------------------------------------------
+database   docker-entrypoint.sh postgres   Up      0.0.0.0:5432->5432/tcp
+```
+
+### Option 1. uWSGI runs the HTTP server 
+
+Update the uWSGI ini file
+
+```ini
+...
+; use protocol uwsgi over TCP socket (use if UNIX file socket is not an option)
+;socket              = :8000
+; add an http router/server on the specified address **port**
+http                = :8000
+; map mountpoint to static directory (or file) **port**
+static-map          = /static/=static/
+static-map          = /media/=media/
+; bind to the specified UNIX/TCP socket using uwsgi protocol (full path) **socket**
+;uwsgi-socket        = ./example.sock
+; ... with appropriate permissions - may be needed **socket**
+;chmod-socket        = 666
+...
+```
+
+Execute the `run_uwsgi.sh` script
+
+```
+(venv)$ UWSGI_UID=$(id -u) UWSGI_GID=$(id -g) ./run_uwsgi.sh
+```
+
+- **NOTE**: the `uwsgi` service will be spawned using the user's **UID** and **GID** values. These would otherwise default to `UID=1000` and `GID=1000` as denoted in the `run_uwsgi.sh` script.
+
+Validate that the Django is running site at [http://localhost:8000/](http://localhost:8000/)
+
+![Django startproject init](https://user-images.githubusercontent.com/5332509/39456943-158aefc2-4cb8-11e8-9c46-b92660665209.png)
+
+### Option 2. Nginx runs the HTTP(s) server
+
+**NOTE**: Depending on your system (macOS) you may not be able to run the Nginx server using sockets mounted from the host. For more information refer to this Github issue: [Support for sharing unix sockets](https://github.com/docker/for-mac/issues/483). If this is the case, you'll either need to run your Nginx server over ports, or run everything in Docker. The following will describe how to run the Nginx server using TCP ports.
+
+Update the uWSGI ini file
+
+```ini
+...
+; use protocol uwsgi over TCP socket (use if UNIX file socket is not an option)
+socket              = :8000
+; add an http router/server on the specified address **port**
+;http                = :8000
+; map mountpoint to static directory (or file) **port**
+;static-map          = /static/=static/
+;static-map          = /media/=media/
+; bind to the specified UNIX/TCP socket using uwsgi protocol (full path) **socket**
+;uwsgi-socket        = ./example.sock
+; ... with appropriate permissions - may be needed **socket**
+;chmod-socket        = 666
+...
+```
+
+Update the nginx configuration file (http or https)
+
+```conf
+upstream django {
+    #server unix:///code/${PROJECT_NAME}.sock; # UNIX file socket
+    # Defaulting to macOS equivalent of docker0 network for TCP socket
+    server docker.for.mac.localhost:8000; # TCP socket
+}
+```
+
+- **NOTE**: `docker.for.mac.localhost` is macOS specific, substitute as required by your operating system
+
+Update the docker-compose file (https only)
+
+```yaml
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - 8080:80
+      - 8443:443
+    volumes:
+      - .:/code
+      - ./static:/code/static
+      - ./media:/code/media
+      - ./nginx/example_nginx_ssl.conf:/etc/nginx/conf.d/default.conf  # SSL configuration file
+      - PATH_TO/SSL.crt:/etc/ssl/SSL.crt                               # SSL cert file on host
+      - PATH_TO/SSL.key:/etc/ssl/SSL.key                               # SSL key file on host
+```
+
+Launch the `nginx` container
+
+```
+$ docker-compose up -d nginx
+```
+
+Execute the `run_uwsgi.sh` script
+
+```
+(venv)$ UWSGI_UID=$(id -u) UWSGI_GID=$(id -g) ./run_uwsgi.sh
+```
+
+- **NOTE**: the `uwsgi` service will be spawned using the user's **UID** and **GID** values. These would otherwise default to `UID=1000` and `GID=1000` as denoted in the `run_uwsgi.sh` script.
+
+Validate that the Django is running site at [http://localhost:8080/](http://localhost:8080/)
+
+- **NOTE**: you should be automatically redirected to port `8443` if using https with SSL certificates.
 
 ## Split settings files
 
