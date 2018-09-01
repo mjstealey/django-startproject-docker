@@ -13,7 +13,7 @@ Generates the necessary files to start a new [Django 2.1](https://www.djangoproj
 - PostgreSQL database backend adapter ([psycopg2-binary](https://pypi.org/project/psycopg2-binary/))
 - uWSGI based run scripts ([uWGSI](https://pypi.org/project/uWSGI/))
 - python-dotenv app settings management ([python-dotenv](https://pypi.org/project/python-dotenv/))
-- Optional Nginx web server (`--nginx` flag)
+- Optional Nginx web server (`--nginx` flag) ([nginx](https://docs.docker.com/samples/library/nginx/))
   - Implements uWSGI socket file
   - Provides an HTTP service configuration for use in Docker
   - Provides stub configuration for HTTPS / SSL use
