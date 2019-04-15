@@ -1,31 +1,73 @@
 #!/usr/bin/env bash
 set -e
 
-### generate .env file ###
-_generate_env() {
-    cat > /code/$PROJECT_NAME/$PROJECT_NAME/.env <<EOF
+### generate python .env file ###
+_generate_python_dot_env() {
+    cat > /code/${PROJECT_NAME}/${PROJECT_NAME}/env.template <<EOF
 # Settings for environment. Notes:
 #
 #  - Since these are bash-like settings, there should be no space between the
 #    variable name and the value (ie, "A=B", not "A = B")
 #  - Boolean values should be all lowercase (ie, "A=false", not "A=False")
 
-# debug
+# Debug
 export DEBUG=true
 
-# database PostgreSQL
-export POSTGRES_PASSWORD=postgres
-export POSTGRES_USER=postgres
+# PostgreSQL database - default values should not be used in production
 export PGDATA=/var/lib/postgresql/data
 export POSTGRES_DB=postgres
 export POSTGRES_HOST=database
+export POSTGRES_PASSWORD=postgres
 export POSTGRES_PORT=5432
+export POSTGRES_USER=postgres
+
+# uWSGI service in Django
+export UWSGI_GID=${UWSGI_GID}
+export UWSGI_UID=${UWSGI_UID}
 EOF
+    cp /code/${PROJECT_NAME}/${PROJECT_NAME}/env.template /code/${PROJECT_NAME}/${PROJECT_NAME}/.env
+}
+
+### generate docker-compose .env file ###
+_generate_compose_dot_env() {
+    cat > /code/${PROJECT_NAME}/env.template <<EOF
+# docker-compose environment file
+#
+# When you set the same environment variable in multiple files,
+# here’s the priority used by Compose to choose which value to use:
+#
+#  1. Compose file
+#  2. Shell environment variables
+#  3. Environment file
+#  4. Dockerfile
+#  5. Variable is not defined
+
+# PostgreSQL database - default values should not be used in production
+PGDATA=/var/lib/postgresql/data
+POSTGRES_DB=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+
+# uWSGI services in Django
+UWSGI_GID=${UWSGI_GID}
+UWSGI_UID=${UWSGI_UID}
+EOF
+    if $WITH_NGINX; then
+        cat >> /code/${PROJECT_NAME}/env.template <<EOF
+
+# Nginx configuration
+NGINX_DEFAULT_CONF=./nginx/default.conf
+NGINX_SSL_CERT=./ssl/ssl_dev.crt
+NGINX_SSL_KEY=./ssl/ssl_dev.key
+EOF
+    fi
+    cp /code/${PROJECT_NAME}/env.template /code/${PROJECT_NAME}/.env
 }
 
 ### generate uwsgi.ini file ###
 _generate_uwsgi_ini() {
-    cat > /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
+    cat > /code/${PROJECT_NAME}/${PROJECT_NAME}_uwsgi.ini << EOF
 [uwsgi]
 ; http://uwsgi-docs.readthedocs.io/en/latest/Options.html
 ; the base directory before apps loading (full path)
@@ -44,19 +86,19 @@ threads             = 1
 ;socket              = :8000
 EOF
     if $WITH_NGINX; then
-        cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
+        cat >> /code/${PROJECT_NAME}/${PROJECT_NAME}_uwsgi.ini << EOF
 ; add an http router/server on the specified address **port**
 ;http                = :8000
 ; map mountpoint to static directory (or file) **port**
 ;static-map          = /static/=static/
 ;static-map          = /media/=media/
 ; bind to the specified UNIX/TCP socket using uwsgi protocol (full path) **socket**
-uwsgi-socket        = ./${PROJECT_NAME}.sock
+uwsgi-socket        = ./django.sock
 ; ... with appropriate permissions - may be needed **socket**
 chmod-socket        = 666
 EOF
     else
-        cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
+        cat >> /code/${PROJECT_NAME}/${PROJECT_NAME}_uwsgi.ini << EOF
 ; add an http router/server on the specified address **port**
 http                = :8000
 ; map mountpoint to static directory (or file) **port**
@@ -68,7 +110,7 @@ static-map          = /media/=media/
 ;chmod-socket        = 666
 EOF
     fi
-    cat >> /code/$PROJECT_NAME/${PROJECT_NAME}_uwsgi.ini << EOF
+    cat >> /code/${PROJECT_NAME}/${PROJECT_NAME}_uwsgi.ini << EOF
 ; clear environment on exit
 vacuum              = true
 ; automatically transform output to chunked encoding during HTTP 1.1 keepalive
@@ -90,50 +132,62 @@ EOF
 
 ### generate run_uwsgi.sh file ###
 _generate_run_uwsgi_sh() {
-    cat > /code/$PROJECT_NAME/run_uwsgi.sh << EOF
+    cat > /code/${PROJECT_NAME}/run_uwsgi.sh << EOF
 #!/usr/bin/env bash
 
-#if [[ "\${USE_DOT_VENV}" -eq 1 ]]; then
-#    source ./.venv/bin/activate
-#else
-#    source ./venv/bin/activate
-#fi
+APPS_LIST=(
+  "admin"
+  "auth"
+  "contenttypes"
+  "sessions"
+  "users"
+)
+
+for app in "\${APPS_LIST[@]}";do
+    python manage.py makemigrations \$app
+done
 python manage.py makemigrations
 python manage.py showmigrations
 python manage.py migrate
 python manage.py collectstatic --noinput
 
 if [[ "\${USE_DOT_VENV}" -eq 1 ]]; then
-    uwsgi --uid \${UWSGI_UID:-1000} --gid \${UWSGI_GID:-1000}  --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
+    uwsgi --uid \${UWSGI_UID:-${UWSGI_UID}} --gid \${UWSGI_GID:-${UWSGI_GID}}  --virtualenv ./.venv --ini ${PROJECT_NAME}_uwsgi.ini
 else
-    uwsgi --uid \${UWSGI_UID:-1000} --gid \${UWSGI_GID:-1000}  --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
+    uwsgi --uid \${UWSGI_UID:-${UWSGI_UID}} --gid \${UWSGI_GID:-${UWSGI_GID}}  --virtualenv ./venv --ini ${PROJECT_NAME}_uwsgi.ini
 fi
 EOF
-    chmod +x /code/$PROJECT_NAME/run_uwsgi.sh
+    chmod +x /code/${PROJECT_NAME}/run_uwsgi.sh
 }
 
 ### generate .gitignore file ###
 _generate_dot_gitignore() {
-    cat > /code/$PROJECT_NAME/.gitignore << EOF
-venv
+    cat > /code/${PROJECT_NAME}/.gitignore << EOF
+*.egg
+*.egg-info
+*.py[cod]
+*.sock
+.coverage
+.DS_Store
+.idea
+.pytest_cache
 .venv
-${PROJECT_NAME}/settings/secrets.py
+/.env
+/${PROJECT_NAME}/.env
+/${PROJECT_NAME}/secrets.py
+/media
+/nginx/default.conf
+/pg_data
+/static
+/venv
+__pycache__
 EOF
-    if $SPLIT_SETTINGS; then
-        cat > /code/$PROJECT_NAME/.gitignore << EOF
-${PROJECT_NAME}/settings/.env
-EOF
-    else
-        cat > /code/$PROJECT_NAME/.gitignore << EOF
-${PROJECT_NAME}/.env
-EOF
-    fi
 }
 
 ### generate Dockerfile file ###
 _generate_dockerfile() {
-    cat > /code/$PROJECT_NAME/Dockerfile << EOF
-FROM python:3.7
+    cat > /code/${PROJECT_NAME}/Dockerfile << "EOF"
+FROM python:3
 MAINTAINER Michael J. Stealey <mjstealey@gmail.com>
 
 RUN apt-get update && apt-get install -y \
@@ -149,7 +203,7 @@ EOF
 
 ### generate docker-entrypoint.sh file ###
 _generate_docker_entrypoint_sh() {
-    cat > /code/$PROJECT_NAME/docker-entrypoint.sh << EOF
+    cat > /code/${PROJECT_NAME}/docker-entrypoint.sh << EOF
 #!/usr/bin/env bash
 set -e
 
@@ -169,20 +223,28 @@ USE_DOT_VENV=1 ./run_uwsgi.sh
 
 exec "\$@"
 EOF
-    chmod +x /code/$PROJECT_NAME/docker-entrypoint.sh
+    chmod +x /code/${PROJECT_NAME}/docker-entrypoint.sh
 }
 
 ### generate docker-compose.yml file ###
 _generate_docker_compose_yml() {
-    cat > /code/$PROJECT_NAME/docker-compose.yml << EOF
+    cat > /code/${PROJECT_NAME}/docker-compose.yml << EOF
 version: '3.6'
 services:
 
   database:
-    image: postgres:10
+    image: postgres:11
     container_name: database
     ports:
-      - 5432:\${POSTGRES_PORT:-5432}
+      - \${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - ./pg_data/data:\${PGDATA:-/var/lib/postgresql/data}
+      - ./pg_data/logs:\${POSTGRES_INITDB_WALDIR:-/var/log/postgresql}
+    environment:
+      - POSTGRES_USER=\${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-postgres}
+      - PGDATA=\${PGDATA:-/var/lib/postgresql/data}
+      - POSTGRES_DB=postgres
 
   django:
     build:
@@ -190,15 +252,21 @@ services:
       dockerfile: Dockerfile
     image: django
     container_name: django
+    depends_on:
+      - database
     ports:
       - 8000:8000
     volumes:
       - .:/code
       - ./static:/code/static
       - ./media:/code/media
+    environment:
+      - UWSGI_UID=\${UWSGI_UID:-${UWSGI_UID}}
+      - UWSGI_GID=\${UWSGI_GID:-${UWSGI_GID}}
+
 EOF
     if $WITH_NGINX; then
-        cat >> /code/$PROJECT_NAME/docker-compose.yml << EOF
+        cat >> /code/${PROJECT_NAME}/docker-compose.yml << EOF
 
   nginx:
     image: nginx:latest
@@ -210,22 +278,22 @@ EOF
       - .:/code
       - ./static:/code/static
       - ./media:/code/media
-      - ./nginx/${PROJECT_NAME}_nginx.conf:/etc/nginx/conf.d/default.conf
+      - \${NGINX_DEFAULT_CONF:-./nginx/default.conf}:/etc/nginx/conf.d/default.conf
+      - \${NGINX_SSL_CERT:-./ssl/ssl_dev.crt}:/etc/ssl/SSL.crt  # SSL certificate
+      - \${NGINX_SSL_KEY:-./ssl/ssl_dev.key}:/etc/ssl/SSL.key   # SSL key
 EOF
     fi
 }
 
 ### populate nginx directory with conf files
 _generate_nginx_conf() {
-    if [[ ! -d /code/$PROJECT_NAME/nginx ]]; then
-        mkdir -p /code/$PROJECT_NAME/nginx
+    if [[ ! -d /code/${PROJECT_NAME}/nginx ]]; then
+        mkdir -p /code/${PROJECT_NAME}/nginx
     fi
-    cat > /code/$PROJECT_NAME/nginx/${PROJECT_NAME}_nginx.conf << EOF
-# ${PROJECT_NAME}_nginx.conf
-
+    cat > /code/${PROJECT_NAME}/nginx/default.conf.template << EOF
 # the upstream component nginx needs to connect to
 upstream django {
-    server unix:///code/${PROJECT_NAME}.sock; # UNIX file socket
+    server unix:///code/django.sock; # UNIX file socket
     # Defaulting to macOS equivalent of docker0 network for TCP socket
     #server docker.for.mac.localhost:8000; # TCP socket
 }
@@ -257,31 +325,30 @@ server {
     }
 }
 EOF
-    cat > /code/$PROJECT_NAME/nginx/${PROJECT_NAME}_nginx_ssl.conf << EOF
-# ${PROJECT_NAME}_nginx_ssl.conf
-
+    cp /code/${PROJECT_NAME}/nginx/default.conf.template /code/${PROJECT_NAME}/nginx/default.conf
+    cat > /code/${PROJECT_NAME}/nginx/default_ssl.conf.template << EOF
 # the upstream component nginx needs to connect to
 upstream django {
-    server unix:///code/${PROJECT_NAME}.sock; # UNIX file socket
+    server unix:///code/django.sock; # UNIX file socket
     # Defaulting to macOS equivalent of docker0 network for TCP socket
-    #server docker.for.mac.localhost:8000; # TCP socket
+    #server host.docker.internal:8000; # TCP socket
 }
 
 server {
     listen 80;
-    return 307 https://\$host:8443\$request_uri?;
+    return 301 https://\$host:8443\$request_uri;
 }
+
 server {
-    listen   443;
+    listen   443 ssl default_server;
     # the domain name it will serve for
-    server_name 127.0.0.1:8443; # substitute your machine's IP address or FQDN
+    server_name \$host:8443; # substitute your machine's IP address or FQDN
 
     # If they come here using HTTP, bounce them to the correct scheme
     error_page 497 https://\$server_name\$request_uri;
     # Or if you're on the default port 443, then this should work too
-    # error_page 497 https://$server_name$request_uri;
+    # error_page 497 https://;
 
-    ssl on;
     ssl_certificate /etc/ssl/SSL.crt;
     ssl_certificate_key /etc/ssl/SSL.key;
 
@@ -302,16 +369,16 @@ server {
     # Finally, send all non-media requests to the Django server.
     location / {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;  # <-
+        proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Host \$http_host;
         proxy_redirect off;
 
         uwsgi_pass  django;
-        include     /code/uwsgi_params; # the uwsgi_params file you installed
+        include     /code/uwsgi_params; # the uwsgi_params file
     }
 }
 EOF
-    cat > /code/$PROJECT_NAME/uwsgi_params << EOF
+    cat > /code/${PROJECT_NAME}/uwsgi_params << EOF
 
 uwsgi_param  QUERY_STRING       \$query_string;
 uwsgi_param  REQUEST_METHOD     \$request_method;
@@ -336,7 +403,7 @@ _generate_secrets_files() {
     local SETTINGS_DIR=$1
     local SETTINGS_PY=$SETTINGS_DIR/settings.py
     # generate secrets.py
-    cat > ${SETTINGS_DIR}/dummy_secrets.py << EOF
+    cat > ${SETTINGS_DIR}/secrets.py.template << EOF
 # This file, dummy_secrets, provides an example of how to configure
 # sregistry with your authentication secrets. Copy it to secrets.py and
 # configure the settings you need.
@@ -366,7 +433,7 @@ EOF
 
 ### create secrets file from settings.py
 _generate_settings() {
-    local SETTINGS_PY=/code/$PROJECT_NAME/$PROJECT_NAME/settings.py
+    local SETTINGS_PY=/code/${PROJECT_NAME}/${PROJECT_NAME}/settings.py
     # secrets files
     _generate_secrets_files $(dirname $SETTINGS_PY)
     # add .env
@@ -380,6 +447,10 @@ _generate_settings() {
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# pytest-django as the test runner
+# https://pytest-django.readthedocs.io/en/latest/faq.html
+TEST_RUNNER = '${PROJECT_NAME}.runner.PytestTestRunner'
 
 try:
     from .secrets import *
@@ -400,117 +471,156 @@ DATABASES = { \
 }\n/};p' $SETTINGS_PY
 }
 
-### populate settings directory
-_generate_split_settings() {
-    local SETTINGS_DIR=/code/$PROJECT_NAME/$PROJECT_NAME/settings
-    local SETTINGS_PY=$SETTINGS_DIR/settings.py
-    mkdir -p $SETTINGS_DIR
-    mv $(dirname $SETTINGS_DIR)/settings.py $SETTINGS_PY
-    # generate __init__.py
-    cat > $SETTINGS_DIR/__init__.py << EOF
-from importlib import import_module
-
-from .applications import *
-from .config import *
-from .main import *
-from .logging import *
-from .auth import *
-from .api import *
-from .tasks import *
-EOF
-    # generate api.py
-    touch $SETTINGS_DIR/api.py
-    # generate applications.py
-    cat > $SETTINGS_DIR/applications.py <<EOF
-import os
-
-# Application definition
-
-EOF
-    sed -n -e '/^INSTALLED_APPS/,/^]/p' $SETTINGS_PY >> $SETTINGS_DIR/applications.py
-    cat >> $SETTINGS_DIR/applications.py <<EOF
-
-THIRD_PARTY_APPS = []
-
-INSTALLED_APPS += THIRD_PARTY_APPS
-EOF
-    sed -i -e '/^INSTALLED_APPS/,/^]/d' $SETTINGS_PY
-    sed -i -e '/^# Application definition/d' $SETTINGS_PY
-    # generate auth.py
-    touch $SETTINGS_DIR/auth.py
-    # generate config.py
-    cat > $SETTINGS_DIR/config.py << EOF
-import os
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', True)
-
-EOF
-    sed -n -e '/^# Database/,/^# https:\/\/docs.djangoproject.com/p' $SETTINGS_PY >> $SETTINGS_DIR/config.py
-    cat >> $SETTINGS_DIR/config.py << EOF
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('POSTGRES_DB', '${POSTGRES_DB}'),
-        'USER': os.getenv('POSTGRES_USER', '${POSTGRES_USER}'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', '${POSTGRES_PASSWORD}'),
-        'HOST': os.getenv('POSTGRES_HOST', '${POSTGRES_HOST}'),
-        'PORT': os.getenv('POSTGRES_PORT', '${POSTGRES_PORT}'),
-    }
+### generate self-signed SSL certificates
+_generate_self_signed_ssl_certs() {
+    if [[ ! -d /code/${PROJECT_NAME}/ssl ]]; then
+        mkdir -p /code/${PROJECT_NAME}/ssl
+    fi
+    if [[ ! -f /code/${PROJECT_NAME}/ssl/ssl_dev.crt ]]; then
+    cd /code/${PROJECT_NAME}/ssl
+        openssl req -newkey rsa:4096 -days 3650 -nodes -x509 \
+            -subj "/C=US/ST=North Carolina/L=Chapel Hill/O=Local/OU=Development/CN=local.dev/emailAddress=email@local.dev" \
+            -keyout ssl_dev.key \
+            -out ssl_dev.crt
+    chmod 0600 ssl_dev.key
+    cd -
+    fi
+    cp /code/${PROJECT_NAME}/nginx/default_ssl.conf.template /code/${PROJECT_NAME}/nginx/default.conf
 }
-EOF
-    sed -i -e '/^# Database/,/^# https:\/\/docs.djangoproject.com/d' $SETTINGS_PY
-    sed -i -e '/^DATABASES/,/^}/d' $SETTINGS_PY
-    # generate logging.py
-    cat > $SETTINGS_DIR/logging.py << EOF
-import os
 
-# Default Django logging is WARNINGS+ to console
-# so visible via docker-compose logs uwsgi
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': os.getenv('DJANGO_LOG_LEVEL', 'WARNING'),
-        },
-    },
-}
-EOF
-    # secrets files
-    _generate_secrets_files $SETTINGS_DIR
-    # generate tasks.py
-    touch $SETTINGS_DIR/tasks.py
-    # generate main.py
-    mv $SETTINGS_PY $SETTINGS_DIR/main.py
-    sed -i '/import os/a from dotenv import load_dotenv\nload_dotenv(\x27'${PROJECT_NAME}'\x2F.env\x27)' $SETTINGS_DIR/main.py
-     sed -i '/^BASE_DIR/c\BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))' $SETTINGS_DIR/main.py
-    sed -i '/^# SECURITY WARNING/d' $SETTINGS_DIR/main.py
-    sed -i '/^DEBUG/d' $SETTINGS_DIR/main.py
-    sed -i 's/ALLOWED_HOSTS = \[\]/ALLOWED_HOSTS = ["*"]/' $SETTINGS_DIR/main.py
-    cat >> $SETTINGS_DIR/main.py << EOF
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+### generate runner.py, pytest.ini and conftest.py for use with pytest
+_generate_pytest_files() {
+    cat > /code/${PROJECT_NAME}/${PROJECT_NAME}/runner.py <<EOF
+"""
+./manage.py test <django args> -- <pytest args>
+"""
 
-try:
-    from .secrets import *
-except ImportError:
+
+class PytestTestRunner(object):
+    """Runs pytest to discover and run tests."""
+
+    def __init__(self, verbosity=1, failfast=False, keepdb=False, **kwargs):
+        self.verbosity = verbosity
+        self.failfast = failfast
+        self.keepdb = keepdb
+
+    def run_tests(self, test_labels):
+        """Run pytest and return the exitcode.
+
+        It translates some of Django's test command option to pytest's.
+        """
+        import pytest
+
+        argv = []
+        if self.verbosity == 0:
+            argv.append('--quiet')
+        if self.verbosity == 2:
+            argv.append('--verbose')
+        if self.verbosity == 3:
+            argv.append('-vv')
+        if self.failfast:
+            argv.append('--exitfirst')
+        if self.keepdb:
+            argv.append('--reuse-db')
+
+        argv.extend(test_labels)
+        return pytest.main(argv)
+
+EOF
+    cat > /code/${PROJECT_NAME}/pytest.ini <<EOF
+[pytest]
+DJANGO_SETTINGS_MODULE =
+    ${PROJECT_NAME}.settings
+python_files =
+    *.py
+norecursedirs =
+    .git
+    .idea
+    _build tmp*
+filterwarnings =
+    ignore::DeprecationWarning
+
+EOF
+    cat > /code/${PROJECT_NAME}/conftest.py <<EOF
+import sys
+
+collect_ignore = [
+    ".venv/*",
+    "venv/*",
+    "pg_data/*"
+]
+
+
+@pytest.fixture(autouse=True)
+def enable_db_access_for_all_tests(db):
     pass
+
+EOF
+}
+
+# generate custom user model
+_generate_custom_user() {
+    cd /code/${PROJECT_NAME}
+    python manage.py startapp users
+    cd -
+    sed -i "/'django.contrib.staticfiles',/a\    'users.apps.UsersConfig'," \
+        /code/${PROJECT_NAME}/${PROJECT_NAME}/settings.py
+    cat >> /code/${PROJECT_NAME}/${PROJECT_NAME}/settings.py <<EOF
+
+AUTH_USER_MODEL = 'users.CustomUser'
+EOF
+    cat > /code/${PROJECT_NAME}/users/models.py <<EOF
+from django.contrib.auth.models import AbstractUser
+from django.db import models
+
+
+class CustomUser(AbstractUser):
+    pass
+
+EOF
+    cat > /code/${PROJECT_NAME}/users/forms.py <<EOF
+from django import forms
+from django.contrib.auth.forms import UserCreationForm, UserChangeForm
+from .models import CustomUser
+
+class CustomUserCreationForm(UserCreationForm):
+
+    class Meta(UserCreationForm):
+        model = CustomUser
+        fields = ('username', 'email')
+
+class CustomUserChangeForm(UserChangeForm):
+
+    class Meta:
+        model = CustomUser
+        fields = ('username', 'email')
+
+EOF
+    cat > /code/${PROJECT_NAME}/users/admin.py <<EOF
+from django.contrib import admin
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin
+
+from .forms import CustomUserCreationForm, CustomUserChangeForm
+from .models import CustomUser
+
+class CustomUserAdmin(UserAdmin):
+    add_form = CustomUserCreationForm
+    form = CustomUserChangeForm
+    model = CustomUser
+    list_display = ['email', 'username',]
+
+admin.site.register(CustomUser, CustomUserAdmin)
+
 EOF
 }
 
 ### main ###
+
 OPTIONS=nso:z:u:g:h
-LONGOPTIONS=nginx,split-settings,owner-uid:,owner-gid:,uwsgi-uid:,uwsgi-gid:,help
+LONGOPTIONS=nginx,ssl-certs,owner-uid:,owner-gid:,uwsgi-uid:,uwsgi-gid:,help
 WITH_NGINX=false
+WITH_SSL=false
 SPLIT_SETTINGS=false
 OWNER_UID=1000
 OWNER_GID=1000
@@ -537,9 +647,9 @@ while true; do
             WITH_NGINX=true
             shift
             ;;
-        -s|--split-settings)
-            echo "### Generate with split settings files ###"
-            SPLIT_SETTINGS=true
+        -s|--ssl-certs)
+            echo "### Generate with SSL self-signed Certificates ###"
+            WITH_SSL=true
             shift
             ;;
         -o|--owner-uid)
@@ -568,12 +678,12 @@ while true; do
 
 Usage: django-startproject-docker [-nsh] [-o owner_uid] [-z owner_gid] [-u uwsgi_uid] [-g uwsgi_gid]
          -n|--nginx          = Include Nginx service definition files with build output
-         -s|--split-settings = Split settings files into their own directory structure
+         -s|--ssl-certs      = Generate self-signed SSL certificates and configure Nginx to use https
          -h|--help           = Help/Usage output
-         -o|--owner-uid      = Host UID to attribute output file ownership to (default=1000)
-         -z|--owner-gid      = Host GID to attribute output file ownership to (default=1000)
-         -u|--uwsgi-uid      = Host UID to run the uwsgi service as (default=0)
-         -g|--uwsgi-gid      = Host GID to run the uwsgi service as (default=0)
+         -o|--owner-uid      = UID to attribute output file ownership to (default=1000)
+         -z|--owner-gid      = GID to attribute output file ownership to (default=1000)
+         -u|--uwsgi-uid      = UID to run the uwsgi service as (default=1000)
+         -g|--uwsgi-gid      = GID to run the uwsgi service as (default=1000)
 
 EOF
             shift
@@ -590,49 +700,69 @@ EOF
     esac
 done
 
-if [ ! -f /code/requirements.txt ]; then
+# check for requirements file
+if [[ ! -f /code/requirements.txt ]]; then
     cp /requirements.txt /code/requirements.txt
     RM_REQTS_FILE=true
 else
     RM_REQTS_FILE=false
 fi
 
+# setup virtual environment
 pip install virtualenv
 virtualenv -p /usr/local/bin/python /venv
 source /venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-django-admin startproject $PROJECT_NAME
-pip freeze  > /code/$PROJECT_NAME/requirements.txt
+# create Django project as PROJECT_NAME
+django-admin startproject ${PROJECT_NAME}
+pip freeze  > /code/${PROJECT_NAME}/requirements.txt
 
-_generate_env
-source /code/$PROJECT_NAME/$PROJECT_NAME/.env
+# create python .env template and initial file
+_generate_python_dot_env
+source /code/${PROJECT_NAME}/${PROJECT_NAME}/.env
 
-mkdir -p /code/$PROJECT_NAME/static \
-    /code/$PROJECT_NAME/media \
-    /code/$PROJECT_NAME/apps \
-    /code/$PROJECT_NAME/plugins
-touch /code/$PROJECT_NAME/plugins/__init__.py
-if $SPLIT_SETTINGS; then
-    _generate_split_settings
-else
-    _generate_settings
-fi
+# create directories for django and postgres
+mkdir -p /code/${PROJECT_NAME}/static \
+    /code/${PROJECT_NAME}/media \
+    /code/${PROJECT_NAME}/pg_data/data \
+    /code/${PROJECT_NAME}/pg_data/logs
+
+# create other Django related files
+_generate_settings
+_generate_pytest_files
 _generate_uwsgi_ini
 _generate_dot_gitignore
 _generate_run_uwsgi_sh
+
+# create custom user model
+_generate_custom_user
+
+# create Nginx related files
 if $WITH_NGINX; then
     _generate_nginx_conf
+    if $WITH_SSL; then
+        mkdir -p /code/${PROJECT_NAME}/ssl
+        _generate_self_signed_ssl_certs
+    fi
 fi
+
+# create docker based files
 _generate_dockerfile
 _generate_docker_entrypoint_sh
 _generate_docker_compose_yml
-chown -R $OWNER_UID:$OWNER_GID /code/$PROJECT_NAME
+_generate_compose_dot_env
+
+# set ownership of all files to be that of OWNER_UID:OWNER_GID
+chown -R $OWNER_UID:$OWNER_GID /code/${PROJECT_NAME}
 
 # clean up
 if $RM_REQTS_FILE; then
     rm -f /code/requirements.txt
 fi
+while read line; do
+  rm -rf $line;
+done < <(find /code -type d -name __pycache__)
 
 exit 0;
