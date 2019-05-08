@@ -18,6 +18,7 @@ In addition to my own Docker based exploits, this work was inspired by:
 
 ## Table of Contents
 
+- [TL;DR](#tldr)
 - [About](#about)
 - [Setup and Requirements](#setup)
 - [Deployment Options](#options)
@@ -28,6 +29,53 @@ In addition to my own Docker based exploits, this work was inspired by:
   - [Run everything in Docker](#docker)
   - [Run Django locally](#local)
 - [References](#references) 
+
+## <a name="tldr"></a>TL;DR
+
+Generate a new Django project named **example_project** using Nginx, SSL and uWSGI server.
+
+```
+docker run --rm \
+  -e PROJECT_NAME=example_project \
+  -v $(pwd):/code \
+  mjstealey/django-startproject-docker \
+  --nginx \
+  --ssl-certs \
+  --owner-uid $(id -u) \
+  --owner-gid $(id -g) \
+  --uwsgi-uid $(id -u) \
+  --uwsgi-gid $(id -g)
+```
+
+Get into the newly created **example_project** directory
+
+```
+cd example_project
+```
+
+Bring up all the containers using `docker-compose`
+
+```
+docker-compose up -d
+```
+
+Verify that all containers are running (containers take a few moments to run all setup scripts)
+
+```console
+$ docker-compose ps
+  Name                Command              State                      Ports
+----------------------------------------------------------------------------------------------
+database   docker-entrypoint.sh postgres   Up      0.0.0.0:5432->5432/tcp
+django     /code/docker-entrypoint.sh      Up      0.0.0.0:8000->8000/tcp
+nginx      nginx -g daemon off;            Up      0.0.0.0:8443->443/tcp, 0.0.0.0:8080->80/tcp
+```
+
+Browse to [https://localhost:8443/](https://localhost:8443/) and verify the running Django site using a self signed SSL certificate
+
+<img width="80%" alt="Django on port 8443" src="https://user-images.githubusercontent.com/5332509/57377887-89e15580-7171-11e9-926c-7e1cfd8baea1.png">
+
+Enjoy!
+
 
 ## <a name="about"></a>About
 
